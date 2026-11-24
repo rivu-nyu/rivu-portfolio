@@ -41,12 +41,19 @@ export const skills = [
   ['ML frameworks', ['PyTorch', 'TensorFlow', 'Keras', 'scikit-learn', 'XGBoost', 'Hugging Face Transformers']],
   ['Data and ML tools', ['Pandas', 'NumPy', 'Matplotlib', 'Seaborn', 'Plotly', 'Jupyter', 'MLflow', 'Weights & Biases']],
   ['Systems', ['Linux', 'Docker', 'Git', 'System design', 'Inference pipelines', 'Performance optimization', 'Benchmarking']],
-  ['Focus', ['LLMs', 'Multimodal learning', 'In-context learning', 'Representation learning', 'Quantization', 'Attention mechanisms']],
 ];
-export const knowledge = `Rivujit Das is an AI researcher and engineer. Education: ${JSON.stringify(education)} Research experience: ${JSON.stringify(research)} Professional experience: ${JSON.stringify(experience)} Teaching assistant for: ${JSON.stringify(teaching)} Publications: ${JSON.stringify(papers.map(({ year, venue, title, doi }) => ({ year, venue, title, doi })))} Skills: ${JSON.stringify(skills)} GitHub: DevRivu. LinkedIn: drivujit. Email: rd3681@nyu.edu.`;
+export const interests = [
+  ['Large language models', 'Compression and faster inference with GPTQ, AWQ and INT8 at Arya.ai'],
+  ['Multimodal learning', 'CANDOR, joining text and images to find bias in news'],
+  ['In-context learning', 'Choosing better demonstrations for robotics prompts at NYU'],
+  ['Representation learning', 'Intervening on representations to test cross-task generalization'],
+  ['Attention mechanisms', 'Reading attention patterns to shrink prompts without losing success'],
+];
+export const knowledge = `Rivujit Das is an AI researcher and engineer. Education: ${JSON.stringify(education)} Research experience: ${JSON.stringify(research)} Professional experience: ${JSON.stringify(experience)} Teaching assistant for: ${JSON.stringify(teaching)} Publications: ${JSON.stringify(papers.map(({ year, venue, title, doi }) => ({ year, venue, title, doi })))} Skills: ${JSON.stringify(skills)} Research interests: ${JSON.stringify(interests)} GitHub: DevRivu. LinkedIn: drivujit. Email: rd3681@nyu.edu.`;
 
 // Offline answers, used when no AI endpoint is configured. The best-scoring topic wins.
 const topics = [
+  [/\b(interests?|interested|focus|passion\w*|curious)\b/g, 'Rivujit is most drawn to large language models, multimodal learning, in-context learning, representation learning and attention mechanisms.'],
   [/\b(teach\w*|taught|tas?|assistants?|courses?|class(es)?|tutor\w*|reinforcement|algorithm\w*|deep learning|natural language)\b/g, 'Rivujit has been a teaching assistant for three graduate courses, Reinforcement Learning, Deep Learning and Natural Language Processing, and for the undergraduate course Algorithmic Computer Science.'],
   [/\b(education|degree|masters?|bachelors?|college|university|stud(y|ied)|school|iiest|shibpur|courant)\b/g, 'Rivujit earned an M.S. in Computer Science at New York University, Courant Institute of Mathematical Sciences (2024–2026), and a B.S. in Computer Science at the Indian Institute of Engineering Science and Technology, Shibpur (2020–2024, First Class).'],
   [/\b(nyu|robot\w*|attention|prompt\w*|spectral|in-context|graduate|research(ed)?)\b/g, 'At NYU, Rivujit studied how prompt composition shapes LLM-based robotics decisions. The work used transformer attention analysis and spectral clustering to choose in-context demonstrations, shrinking prompts while reaching up to 60% task success. It also included a representation intervention method for testing cross-task generalization.'],

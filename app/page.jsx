@@ -1,7 +1,7 @@
 import World from '../components/World';
 import Lab from '../components/Lab';
 import Twin from '../components/Twin';
-import { education, research, experience, papers, skills, teaching } from '../components/data';
+import { education, interests, research, experience, papers, skills, teaching } from '../components/data';
 import { ArrowDown, ArrowUpRight, Flame, Github, Linkedin, Mail } from 'lucide-react';
 
 export default function Home() {
@@ -32,8 +32,14 @@ export default function Home() {
           <div className="panel">
             <h2>Curiosity is my constant</h2>
             <p>My journey spans multimodal learning and robotics research at NYU, efficient LLM inference at Arya.ai, multilingual NLP at PwC and data engineering at Presto Automation.</p>
-            <dl className="education">{education.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
             <a className="textlink" href="https://github.com/DevRivu" target="_blank" rel="noreferrer">View GitHub <ArrowUpRight size={16} /></a>
+          </div>
+        </section>
+
+        <section id="education" className="stop right">
+          <div className="panel">
+            <h2>Education</h2>
+            <dl className="education">{education.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
           </div>
         </section>
 
@@ -91,6 +97,13 @@ export default function Home() {
           <div className="panel">
             <h2>What I build with</h2>
             <dl className="skills">{skills.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v.join(', ')}</dd></div>)}</dl>
+          </div>
+        </section>
+
+        <section id="interests" className="stop left">
+          <div className="panel">
+            <h2>What draws me in</h2>
+            <dl className="skills">{interests.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
           </div>
         </section>
 

@@ -2,6 +2,51 @@ import * as THREE from 'three';
 import { GLSL, SHADOW, HMAP, rng, lerp, smooth, noise } from './common';
 import { FALL, height } from './landscape';
 
+export function fallMaterial(u, fade = false) {
+  const m = new THREE.ShaderMaterial({ uniforms: u, side: THREE.DoubleSide, transparent: true, depthWrite: false,
+    vertexShader: `precision highp float; attribute vec4 aD; varying vec2 vU; varying vec4 vD; varying vec3 vW; varying float vSun; uniform float uTime; uniform vec3 uSunDir; uniform sampler2D tNoise; ${HMAP}
+      float tv(vec2 p){ return texture2D(tNoise, p * .125).r - .48; }
+      void main(){ vU = uv; vD = aD; vec3 p = position; float q = sqrt(uv.y + .4) * 1.55 - uTime * 2.1, k = smoothstep(.06, .4, aD.x);
+        // pulses of water billow outward as they fall
+        p.x -= k * (tv(vec2(p.z * .5 + aD.y * 20., q * 1.1)) * 2.6 + tv(vec2(p.z * 1.4, q * 2.4 + aD.y * 9.)) * 1.0); p.z += k * tv(vec2(q * 1.2 + aD.y * 31., p.z * .3)) * .9;
+        vW = p; vSun = sunVis(p + vec3(-5., 3., 0.), uSunDir); gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.); }`,
+    fragmentShader: GLSL + /* glsl */ `uniform sampler2D tNoise; varying vec2 vU; varying vec4 vD; varying vec3 vW; varying float vSun;
+      float tn(vec2 p){ return texture2D(tNoise, p * .125).r; }
+      // q runs with fall time, not distance, so every feature stretches and speeds up as it drops
+      float flow(vec2 p, float q, float s){ return tn(vec2(p.x * 2.6 + s, q * 1.1)) * .42 + tn(vec2(p.x * 6.5 - s, q * 1.9)) * .30 + tn(vec2(p.x * .9 + s * 2., q * .75)) * .40; }
+      void main(){ float a = vU.x, f = vD.x, s = vD.y * 37., q = sqrt(vU.y + .4) * 1.55 - uTime * 2.1;
+        #ifdef FADE
+          q = sqrt(vU.y + .4) * 1.15 - uTime * 1.25; float zz = vU.x * 2.4 + vD.y * 11.;
+        #else
+          float zz = vW.z;
+        #endif
+        float z = zz + (tn(vec2(zz * .7 + s, q * .8)) - .48) * 1.3 * f;
+        float h = flow(vec2(z, 0.), q, s), hz = flow(vec2(z + .07, 0.), q, s), hq = flow(vec2(z, 0.), q + .05, s);
+        float clump = smoothstep(.50, .74, tn(vec2(z * 1.15 + s * 3., q * 1.7)) * .75 + tn(vec2(z * 3.1, q * 3.4 - s)) * .32);
+        float edge = 1. - smoothstep(.35, 1., abs(a) + (tn(vec2(s + sign(a) * 7., q * 2.2)) - .48) * 1.1 + f * .12);
+        float thick = smoothstep(mix(.10,.22,f), mix(.44,.58,f), h + clump * .14);
+        float al = edge * mix(thick, 1., (1. - smoothstep(0., .16, f)) * .65); al = clamp(al * vD.z * 1.12 + clump * edge * .35, 0., 1.);
+        vec3 N = normalize(vec3(-1., .35 + (h - hq) * 7., (h - hz) * 10.)), V = normalize(cameraPosition - vW);
+        float nl = max(dot(N, uSunDir), 0.), hl = pow(max(dot(N, normalize(V + uSunDir)), 0.), 34.);
+        // glassy blue-green where thin, aerated white where it breaks
+        float lip = smoothstep(.20, .02, f) * step(1.5, vD.w), foot = smoothstep(.80, 1., f); float bub = smoothstep(.50,.66, tn(vec2(z * 7., q * 7. + s))) ; float white = clamp(thick * .5 + clump * .75 + f * .25 - .14 + (lip + foot) * (.35 + .5 * bub), 0., 1.);
+        vec3 c = mix(vec3(.10,.22,.24), vec3(.93,.96,.97), white);
+        float hollow = smoothstep(.62, .40, h) * (1. - clump); c *= 1. - .48 * hollow;
+        vec3 col = c * (uSunCol * vSun * (.10 + .40 * nl) + mix(uGround, uSky, .72 + N.y * .25) * .46);
+        col += uSunCol * vSun * hl * (.35 + .9 * clump) * .55;
+        col += uSunCol * vSun * (lip + foot) * bub * smoothstep(.55,.9, tn(vec2(z * 11. + uTime, q * 12.)) + .25) * .55;
+        // single drops flashing in the sun
+        vec2 gq = vec2(z * 5.5, q * 7.); vec2 ce = floor(gq), fr = fract(gq) - .5; float tw = step(.955, hash2(ce + s)) * smoothstep(.42, .0, length(fr)); col += uSunCol * vSun * tw * 1.3 * edge;
+        al = max(al, tw * edge * .8) * smoothstep(1., .95, f * step(1.5, vD.w)) ;
+        
+        #ifdef FADE
+          al *= smoothstep(1., .15, f) * mix(1., .55 + .45 * smoothstep(.35,.7,h), f); al *= mix(1., smoothstep(.30 + .35 * f, .75, h + clump * .25), smoothstep(.1, .5, f)); col = mix(col, uSky * .75 + uSunCol * .22, .35 + .3 * f);
+        #endif
+        gl_FragColor = vec4(fogged(col, vW), min(al, .97)); }` });
+  if (fade) m.defines = { FADE: 1 };
+  return m;
+}
+
 // Falling water as layered sheets that follow the cliff profile, plus spray, drifting mist and a faint rainbow.
 export function createWaterfall(u, low) {
   const group = new THREE.Group(), R = rng(19), X = FALL.x, Z = FALL.z;
@@ -29,37 +74,7 @@ export function createWaterfall(u, low) {
     s.base = new THREE.Vector3(lowX - 2.5 - s.push * 1.3, 0.3, z);
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setAttribute('aD', new THREE.Float32BufferAttribute(data, 4)); g.setIndex(idx); g.computeVertexNormals();
-  const water = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: u, side: THREE.DoubleSide, transparent: true, depthWrite: false,
-    vertexShader: `precision highp float; attribute vec4 aD; varying vec2 vU; varying vec4 vD; varying vec3 vW; varying float vSun; uniform float uTime; uniform vec3 uSunDir; uniform sampler2D tNoise; ${HMAP}
-      float tv(vec2 p){ return texture2D(tNoise, p * .125).r - .48; }
-      void main(){ vU = uv; vD = aD; vec3 p = position; float q = sqrt(uv.y + .4) * 1.55 - uTime * 2.1, k = smoothstep(.06, .4, aD.x);
-        // pulses of water billow outward as they fall
-        p.x -= k * (tv(vec2(p.z * .5 + aD.y * 20., q * 1.1)) * 2.6 + tv(vec2(p.z * 1.4, q * 2.4 + aD.y * 9.)) * 1.0); p.z += k * tv(vec2(q * 1.2 + aD.y * 31., p.z * .3)) * .9;
-        vW = p; vSun = sunVis(p + vec3(-5., 3., 0.), uSunDir); gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.); }`,
-    fragmentShader: GLSL + /* glsl */ `uniform sampler2D tNoise; varying vec2 vU; varying vec4 vD; varying vec3 vW; varying float vSun;
-      float tn(vec2 p){ return texture2D(tNoise, p * .125).r; }
-      // q runs with fall time, not distance, so every feature stretches and speeds up as it drops
-      float flow(vec2 p, float q, float s){ return tn(vec2(p.x * 2.6 + s, q * 1.1)) * .42 + tn(vec2(p.x * 6.5 - s, q * 1.9)) * .30 + tn(vec2(p.x * .9 + s * 2., q * .75)) * .40; }
-      void main(){ float a = vU.x, f = vD.x, s = vD.y * 37., q = sqrt(vU.y + .4) * 1.55 - uTime * 2.1;
-        float z = vW.z + (tn(vec2(vW.z * .7 + s, q * .8)) - .48) * 1.3 * f;
-        float h = flow(vec2(z, 0.), q, s), hz = flow(vec2(z + .07, 0.), q, s), hq = flow(vec2(z, 0.), q + .05, s);
-        float clump = smoothstep(.50, .74, tn(vec2(z * 1.15 + s * 3., q * 1.7)) * .75 + tn(vec2(z * 3.1, q * 3.4 - s)) * .32);
-        float edge = 1. - smoothstep(.35, 1., abs(a) + (tn(vec2(s + sign(a) * 7., q * 2.2)) - .48) * 1.1 + f * .12);
-        float thick = smoothstep(mix(.10,.22,f), mix(.44,.58,f), h + clump * .14);
-        float al = edge * mix(thick, 1., (1. - smoothstep(0., .16, f)) * .65); al = clamp(al * vD.z * 1.12 + clump * edge * .35, 0., 1.);
-        vec3 N = normalize(vec3(-1., .35 + (h - hq) * 7., (h - hz) * 10.)), V = normalize(cameraPosition - vW);
-        float nl = max(dot(N, uSunDir), 0.), hl = pow(max(dot(N, normalize(V + uSunDir)), 0.), 34.);
-        // glassy blue-green where thin, aerated white where it breaks
-        float lip = smoothstep(.20, .02, f) * step(1.5, vD.w), foot = smoothstep(.80, 1., f); float bub = smoothstep(.50,.66, tn(vec2(z * 7., q * 7. + s))) ; float white = clamp(thick * .5 + clump * .75 + f * .25 - .14 + (lip + foot) * (.35 + .5 * bub), 0., 1.);
-        vec3 c = mix(vec3(.10,.22,.24), vec3(.93,.96,.97), white);
-        float hollow = smoothstep(.62, .40, h) * (1. - clump); c *= 1. - .48 * hollow;
-        vec3 col = c * (uSunCol * vSun * (.10 + .40 * nl) + mix(uGround, uSky, .72 + N.y * .25) * .46);
-        col += uSunCol * vSun * hl * (.35 + .9 * clump) * .55;
-        col += uSunCol * vSun * (lip + foot) * bub * smoothstep(.55,.9, tn(vec2(z * 11. + uTime, q * 12.)) + .25) * .55;
-        // single drops flashing in the sun
-        vec2 gq = vec2(z * 5.5, q * 7.); vec2 ce = floor(gq), fr = fract(gq) - .5; float tw = step(.955, hash2(ce + s)) * smoothstep(.42, .0, length(fr)); col += uSunCol * vSun * tw * 1.3 * edge;
-        al = max(al, tw * edge * .8) * smoothstep(1., .95, f * step(1.5, vD.w)) ;
-        gl_FragColor = vec4(fogged(col, vW), min(al, .97)); }` }));
+  const water = new THREE.Mesh(g, fallMaterial(u));
   water.renderOrder = 2; water.frustumCulled = false; group.add(water);
 
   // spray thrown up where each strand lands
@@ -112,7 +127,7 @@ export function createAir(u, low) {
   const n = low ? 220 : 700, g = new THREE.InstancedBufferGeometry(), R = rng(61), o = new Float32Array(n * 4); g.instanceCount = n; g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3)); g.setIndex([0, 1, 2, 0, 2, 3]);
   for (let i = 0; i < n; i++) o.set([R() * 60, R() * 34, R() * 60, R()], i * 4); g.setAttribute('aO', new THREE.InstancedBufferAttribute(o, 4));
   const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: u, transparent: true, depthWrite: false, side: THREE.DoubleSide,
-    vertexShader: GLSL + /* glsl */ `attribute vec4 aO; varying vec2 vQ; varying float vA; varying vec3 vC; void main(){ vQ = position.xy; float U = -uPhx.z / 300.; float snow = bump(U, 4., .4, .4), ash = bump(U, 5.6, .7, .3), pol = (1. - snow) * (1. - ash);
+    vertexShader: GLSL + /* glsl */ `attribute vec4 aO; varying vec2 vQ; varying float vA; varying vec3 vC; void main(){ vQ = position.xy; float U = -uPhx.z / 300.; float snow = bump(U, 4., .4, .4), ash = bump(U, 5.6, .7, .3), pol = (1. - snow) * (1. - ash); snow *= 1. - uHigh; ash *= 1. - uHigh; pol *= 1. - uHigh * .4;
       vec3 B = vec3(60., 34., 60.); vec3 v = vec3(-.7, -1.9, .3) * snow + vec3(.5, -.55, .2) * ash + vec3(.25, .08, .15) * pol; vec3 f = cameraPosition - vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]) * 24.;
       vec3 p = aO.xyz + v * uTime * (.7 + aO.w * .6); p = mod(p - f, B) - B * .5 + f; p += vec3(sin(uTime * .9 + aO.w * 40.), sin(uTime * .7 + aO.w * 70.) * .6, cos(uTime * .8 + aO.w * 55.)) * mix(.7, .5, snow);
       float d = length(p - cameraPosition); vA = smoothstep(7., 13., d) * smoothstep(34., 22., d) * (snow * .85 + ash * .5 + pol * .42 * step(.55, aO.w)); float glow = pow(max(dot(normalize(p - cameraPosition), uSunDir), 0.), 4.);

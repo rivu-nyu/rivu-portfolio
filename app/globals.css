@@ -60,8 +60,12 @@ header{position:fixed;inset:0 0 auto;z-index:50;background:rgba(20,13,12,.4);bac
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:clamp(22px,2.6vw,36px);box-shadow:0 20px 60px rgba(0,0,0,.28)}
 .panel h2{margin-bottom:18px}
 
-#about,#research,#skills,#twin{scroll-margin-top:calc(-25svh - 72px)}
+#about,#education,#research,#skills,#interests,#twin{scroll-margin-top:calc(-25svh - 72px)}
 .low{scroll-margin-top:-24vh}
+
+/* room to climb into and sink out of the clouds */
+#skills{margin-bottom:70svh}
+#interests{margin-bottom:110svh}
 
 .hero{min-height:100svh;padding-top:72px;padding-bottom:9vh;justify-content:flex-end;align-items:flex-start}
 .hero h1{font-size:clamp(56px,9vw,136px);line-height:.95;letter-spacing:-.02em;text-shadow:0 3px 40px rgba(15,6,3,.6)}
@@ -80,6 +84,7 @@ dd{color:var(--soft)}
 .skills{margin-bottom:0}
 .skills dt{color:var(--gold)}
 .textlink{display:inline-flex;align-items:center;gap:7px;color:var(--gold);font-weight:500}
+#about .textlink{margin-top:20px}
 .textlink:hover{text-decoration:underline;text-underline-offset:4px}
 
 .stack{display:grid;gap:34vh}
@@ -164,7 +169,7 @@ footer{padding:22px var(--gutter);display:flex;justify-content:space-between;gap
   .prompts{flex-wrap:nowrap;overflow-x:auto}
   .prompts button{white-space:nowrap}
   .contact{padding-bottom:10vh}
-  #about,#research,#skills{scroll-margin-top:-14vh}
+  #about,#education,#research,#skills,#interests{scroll-margin-top:-14vh}
   #twin{scroll-margin-top:calc(-10svh - 72px)}
   #twin{justify-content:flex-end;padding-bottom:6vh;min-height:110svh}
 }

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { GLSL, SHADOW, HMAP, noise, smooth, bump, rng, lerp } from './common';
-import { STOP_GAP, STOPS, FIRST, zOf } from './stops';
+import { STOP_GAP, STOPS, pOf } from './stops';
 
-const Z0 = 1020, Z1 = -2980;
+const Z0 = 1320, Z1 = -2980;
 export const center = (z) => 55 * Math.sin(z * 0.0045) + 24 * Math.sin(z * 0.011 + 1.3);
 // The volcano beside the caldera: shared by the terrain, its lava and its smoke.
 export const CONE = { z: -1400, r: 205, h: 150 }; CONE.x = center(CONE.z) + 235;
@@ -13,15 +13,18 @@ export function fallCliff(x, z) { // distance into the rock face, curved into an
   return x - (FALL.x + alcove) + 3.4 * noise(x * 0.07, z * 0.07) + 1.6 * noise(z * 0.21, x * 0.13 + 4) + 5 * Math.max(0, Math.abs(t) - 0.6);
 }
 const lakeAt = (z) => bump(-z / STOP_GAP, 3.2, 0.28, 0.3);
-export const riverWidth = (z) => 7 + 3 * noise(z * 0.02, 1) + lakeAt(z) * 40;
+// Blossom Sanctuary: the river widens into a still pond with an islet
+export const pondAt = (z) => bump(-z / STOP_GAP, 0, 0.1, 0.34);
+export const HERO = { x: center(2) - 31, z: 2 }; // the great tree on the left bank
+export const riverWidth = (z) => 7 + 3 * noise(z * 0.02, 1) + lakeAt(z) * 40 + pondAt(z) * 12;
 
 export function height(x, z) {
   const u = -z / STOP_GAP, o = x - center(z), d = Math.abs(o);
-  const canyon = bump(u, 2.12, 0.55, 0.3), lake = lakeAt(z), volc = bump(u, 5.5, 0.7, 0.4);
+  const canyon = bump(u + 0.1 * noise(x * 0.008, z * 0.008), 2.12, 0.5, 0.4), lake = lakeAt(z), volc = bump(u, 5.5, 0.7, 0.4);
   const rw = riverWidth(z), bank = smooth(rw + 4, rw + 30, d);
   // meandering valley walls
   const wob = (14 * noise(x * 0.011, z * 0.011) + 6 * noise(x * 0.034 + 9, z * 0.034)) * smooth(18, 60, d);
-  const fw = 27 + 9 * noise(z * 0.01, 4.2) + lake * 34 + canyon * 24, dw = d + wob;
+  const pond = pondAt(z), fw = 27 + 9 * noise(z * 0.01, 4.2) + lake * 34 + canyon * 24 + pond * 34, dw = d + wob;
   let m = 0;
   if (canyon < 1) {
     const wx = x + 26 * noise(x * 0.006 + 3, z * 0.006), wz = z + 26 * noise(x * 0.006, z * 0.006 + 7);
@@ -69,8 +72,11 @@ export function height(x, z) {
 
 const BIOME = /* glsl */ `
 float U = -vW.z / ${STOP_GAP.toFixed(1)};
-float canyon = bump(U, 2.12, .55, .3), snowy = bump(U, 4., .45, .5), volc = bump(U, 5.5, .7, .4);
-vec2 cp = vW.xz - vec2(${CONE.x.toFixed(2)}, ${CONE.z.toFixed(1)}); float coneD = length(cp); float cone = smoothstep(${CONE.r.toFixed(1)}, 120., coneD); volc = max(volc, cone); snowy *= 1. - cone;`;
+// borders wander and interlock instead of cutting straight across the valley
+float UW = U + (n2(vW.xz * .011) - .5) * .42 + (n2(vW.xz * .045 + 7.) - .5) * .16 + (n2(vW.xz * .19 + 3.) - .5) * .05;
+float canyon = bump(UW, 2.12, .50, .36), snowy = bump(UW, 4., .42, .62), volc = bump(UW, 5.5, .66, .48);
+float hiA = step(300., vW.y); canyon *= 1. - hiA; snowy *= 1. - hiA; volc *= 1. - hiA; float pinkK = bump(UW, 0., .17, .42) * (1. - hiA);
+vec2 cp = vW.xz - vec2(${CONE.x.toFixed(2)}, ${CONE.z.toFixed(1)}); float coneD = length(cp); float cone = (1. - hiA) * smoothstep(${CONE.r.toFixed(1)}, 120., coneD); volc = max(volc, cone); snowy *= 1. - cone;`;
 
 // Shared rock/soil surface built from scanned textures, projected from three sides so cliffs never stretch.
 const SURFACE = /* glsl */ `
@@ -85,14 +91,17 @@ vec3 triN(sampler2D t, vec3 p, vec3 w, vec3 n, float k){
 vec3 planar(sampler2D t, vec2 p){ vec2 q = mat2(.82,.57,-.57,.82) * p; return mix(texture2D(t, p).rgb, texture2D(t, q * .31 + .37).rgb, smoothstep(.35,.65, n2(p * .7))); }
 `;
 
-function groundMaterial(u, { rock = false } = {}) {
+export function groundMaterial(u, { rock = false, far = false } = {}) {
   return new THREE.ShaderMaterial({
-    uniforms: u, side: THREE.DoubleSide, defines: rock ? { ROCK: 1 } : {},
+    uniforms: u, side: THREE.DoubleSide, defines: rock ? (far ? { ROCK: 1, ISLE: 1 } : { ROCK: 1 }) : {},
     vertexShader: `precision highp float; attribute float aAo; varying vec3 vW, vN; varying float vAo, vSun; uniform vec3 uSunDir; ${HMAP}
       void main(){
         #ifdef ROCK
           vec4 w = instanceMatrix * vec4(position, 1.); vW = w.xyz; vN = mat3(instanceMatrix) * (normal / vec3(dot(instanceMatrix[0].xyz,instanceMatrix[0].xyz), dot(instanceMatrix[1].xyz,instanceMatrix[1].xyz), dot(instanceMatrix[2].xyz,instanceMatrix[2].xyz)));
           vAo = mix(.45, 1.05, smoothstep(-.2, 2.2, vW.y - hAt(vW.xz)));
+          #ifdef ISLE
+            vAo = aAo;
+          #endif
         #else
           vW = position; vN = normal; vAo = aAo;
         #endif
@@ -119,11 +128,14 @@ function groundMaterial(u, { rock = false } = {}) {
           rk = mix(rk, cl * 1.15, canyon); N = normalize(mix(N, triN(tCliffN, q * vec3(.042,.05,.042), w, G, 1.3 * nk), canyon));
         }
         vec3 bs = vec3(.05); if (volc > .01) { bs = tri(tBasalt, vW * .07, w); bs = mix(bs, tri(tBasalt, vW * .02, w), .4); bs = mix(vec3(dot(bs, vec3(.33))), bs, .6) * 1.15 + .012; } rk = mix(rk, bs * vec3(.86,.80,.80), volc);
+        #ifdef ISLE
+          rk = mix(tri(tRock, vW * .045, w), tri(tRock, vW * .012, w), .4); rk = pow(rk, vec3(1.1)) * .95; rk *= .6 + .6 * tn3(vW * .3, w); N = triN(tRockN, vW * .05, w, G, 1.3); rk = mix(rk, vec3(.10,.14,.06), smoothstep(.45,.62, tn3(vW * .5, w)) * smoothstep(.0,.6,G.y) * .6); float strat = tn(vec2(vW.y * 1.1 + fine * 3., 4.)); rk *= .72 + .55 * strat; rk *= mix(1., .55, smoothstep(.1, -.6, G.y));
+        #endif
         // ground cover
         float slope = 1. - normalize(mix(G, N, .55)).y;
-        float gs = smoothstep(.40, .20, slope + (fine - .5) * .22) * smoothstep(125., 60., vW.y + big * 40.);
+        float gs = smoothstep(.40 + .16 * pinkK, .20 + .14 * pinkK, slope + (fine - .5) * .22) * max(hiA, smoothstep(125., 60., vW.y + big * 40.));
         #ifdef ROCK
-          gs = smoothstep(.25, .05, slope + (grit - .4) * .5) * .55 * (1. - volc) * (1. - canyon);
+          gs = smoothstep(.25, .05, slope + (grit - .4) * .5) * .55 * (1. - volc) * (1. - canyon); if (hiA > .5) gs = smoothstep(.42, .24, slope + (grit - .5) * .2) * step(0., G.y);
         #endif
         vec3 gr = rk, sd = vec3(.22,.15,.09);
         if (gs > .01 || slope < .5) {
@@ -131,9 +143,9 @@ function groundMaterial(u, { rock = false } = {}) {
         sd = texture2D(tSand, vW.xz * .021).rgb; if (close) sd = mix(mix(planar(tSand, vW.xz * .13), sd, .35), sd, smoothstep(90., 150., dist));
         gr = mix(gr, sd, smoothstep(.52,.66, fine + (grit - .5) * .5) * .75);
         vec3 soil = mix(sd * vec3(1.25,.86,.62), sd * vec3(1.35,1.1,.85), smoothstep(.35,.65,big)); soil = mix(soil, vec3(.17,.16,.06), smoothstep(.55,.72, grit) * smoothstep(.45,.65, big) * .5);
-        gr = mix(gr, soil, canyon); gr = mix(gr, mix(bs * .8, vec3(.085,.078,.08) * (.6 + grit), smoothstep(.4,.65,fine)), volc);
+        gr = mix(gr, mix(vec3(.055,.105,.022), vec3(.17,.21,.06), clamp(big * 1.5 - .35 + grit * .4, 0., 1.)) * (.6 + .8 * gr.g * 2.2), pinkK * .95); gr = mix(gr, soil, canyon); gr = mix(gr, mix(bs * .8, vec3(.085,.078,.08) * (.6 + grit), smoothstep(.4,.65,fine)), volc);
         }
-        vec2 fp = vW.xz - vec2(${FALL.x.toFixed(2)}, ${FALL.z.toFixed(1)}); float nearF = smoothstep(120., 40., length(fp));
+        vec2 fp = vW.xz - vec2(${FALL.x.toFixed(2)}, ${FALL.z.toFixed(1)}); float nearF = (1. - hiA) * smoothstep(120., 40., length(fp));
         if (nearF > .01) {
           vec3 rs = tri(tRock, vW * .055, w) * (.55 + .75 * tri(tRock, vW * .16, w)); rk = mix(rk, pow(rs, vec3(1.35)) * .85, nearF * .75); N = normalize(mix(N, triN(tRockN, vW * .06, w, G, 1.5), nearF * .8)); rk *= mix(vec3(1.), vec3(.60,.58,.54) * (.75 + .5 * tn(vec2(fp.y * .16, vW.y * .05))), nearF); float moss = nearF * smoothstep(1.0, .35, slope + (fine - .5) * 1.1) * smoothstep(.42, .56, fine * .5 + grit * .5 + (tn(vW.xz * 1.9 + vW.y) - .48) * .5);
           rk = mix(rk, vec3(.035,.075,.016) * (.6 + grit * 1.4), moss * .9);
@@ -143,10 +155,11 @@ function groundMaterial(u, { rock = false } = {}) {
         vec3 alb = mix(rk, gr, gs);
         // scree at the foot of cliffs
         alb = mix(alb, mix(rk, sd, .4) * (.65 + .7 * grit), smoothstep(.16,.28,slope) * smoothstep(.52,.36,slope) * .55);
-        float line = mix(112., 14., snowy) + canyon * 300. + volc * 400.;
+        float line = mix(112., 14., snowy) + canyon * 300. + volc * 400. + hiA * 2000.;
         float snow = smoothstep(line - 12., line + 26., vW.y + (fine - .5) * 46. + big * 18.) * smoothstep(.52, .30, slope + (grit - .5) * .2);
         snow = max(snow, snowy * smoothstep(.42, .2, slope + (grit - .5) * .25) * smoothstep(.8, 3.2, vW.y));
         alb = mix(alb, vec3(.62,.67,.75) * (.93 + .12 * grit), snow); N = normalize(mix(N, G, snow * .75));
+        if (pinkK > .01) { vec2 pq = vW.xz * 5.5; vec2 pc = floor(pq); float ph = hash2(pc); vec2 pf = fract(pq) - .5 - (vec2(hash2(pc + 3.), hash2(pc + 7.)) - .5) * .5; float ca = cos(ph * 40.), sa = sin(ph * 40.); pf = mat2(ca, -sa, sa, ca) * pf; float pet = step(.28 + .4 * fine, ph) * smoothstep(.26, .20, length(pf * vec2(1., 1.7))); alb = mix(alb, mix(vec3(.82,.28,.45), vec3(.97,.70,.79), hash2(pc + 11.)), pet * pinkK * smoothstep(26., 10., dist) * smoothstep(.6,.2,slope)); alb = mix(alb, vec3(.74,.36,.46), pinkK * smoothstep(8., 30., dist) * smoothstep(.42, .66, big * .5 + fine * .35 + grit * .25) * .34 * smoothstep(.5,.2,slope)); }
         float shore = smoothstep(2.6, .4, vW.y + (grit - .5)); alb = mix(alb, sd * .55, shore * .7 * (1. - volc)); alb *= 1. - .45 * smoothstep(1., .0, vW.y);
         float ao = clamp(vAo, .25, 1.1) * mix(1., .62 + .7 * grit, nk * (1. - snow * .8));
         float sh = vSun * castShadow(vW, G); if (nearF > .01) sh *= mix(1., .42 + .58 * smoothstep(.40, .56, tn(vW.xz * .035 + vec2(uTime * .09, uTime * .05)) + .22 * smoothstep(34., 8., abs(fp.y))), nearF);
@@ -177,6 +190,9 @@ function groundMaterial(u, { rock = false } = {}) {
           col += (halo * keep * .5 + sh2 * .55) * (alb * 3. + .03) * vec3(2.4,.45,.06) * flick;
           #endif
         }
+        #ifdef ISLE
+          col += alb * (vec3(.04,.22,.15) * uAurora * (.35 + .65 * max(N.y, 0.)) + uSky * .30 * (.4 + .6 * vAo)); col += uSky * .10 * pow(1. - max(dot(N, V), 0.), 3.);
+        #endif
         gl_FragColor = vec4(fogged(col, vW), 1.);
       }`,
   });
@@ -242,7 +258,7 @@ export function createWater(u) {
         float depth = -hAt(vW.xz) + (n2(vW.xz * .7) - .5) * .5; if (depth < -.3) discard;
         vec3 V = normalize(cameraPosition - vW); float dist = length(cameraPosition - vW);
         vec2 e = vec2(.35, 0.); float h = wv(vW.xz);
-        float calm = mix(.5, .16, bump(U, 3.2, .4, .3)) / (1. + dist * .012);
+        float calm = mix(.5, .14, max(bump(U, 3.2, .4, .3), bump(U, 0., .14, .12))) / (1. + dist * .012);
         vec3 N = normalize(vec3((h - wv(vW.xz + e.xy)) * calm, .35, (h - wv(vW.xz + e.yx)) * calm));
         float fr = .03 + .97 * pow(1. - max(dot(N, V), 0.), 5.);
         vec3 R = reflect(-V, N); R.y = abs(R.y);
@@ -250,7 +266,7 @@ export function createWater(u) {
         vec3 refl = skyGrad(normalize(R + vec3(0., .06, 0.))) * .85; float hit = 0., t = 8.;
         for (int i = 0; i < 9; i++){ vec3 q = vW + R * t; if (q.y < hAt(q.xz)) { hit = 1.; break; } t *= 1.5; }
         vec3 land = mix(mix(vec3(.10,.12,.06), vec3(.34,.16,.08), canyon), vec3(.5,.55,.62), snowy) * (uSky * .6 + uSunCol * .22); land = mix(land, uFog, clamp(1. - exp(-t * uDen * 1.4), 0., 1.));
-        refl = mix(refl, land, hit * .85);
+        land = mix(land, mix(vec3(.16,.22,.07), vec3(.86,.42,.56), smoothstep(.36, .56, n2(vW.xz * .09 + R.xz * 5.) )) * (uSky * .55 + uSunCol * .26), pinkK * .85 * smoothstep(120., 30., t)); refl = mix(refl, land, hit * .85);
         float sh = castShadow(vW, N), vSunW = sunVis(vW, uSunDir);
         vec3 deep = mix(vec3(.10,.15,.11), vec3(.012,.055,.06), smoothstep(0., 2.6, depth)) * (uSky + uSunCol * .2 * sh);
         vec3 col = mix(deep, refl, fr);
@@ -259,12 +275,13 @@ export function createWater(u) {
         { float toward = pow(max(dot(normalize(vec3(R.x, max(R.y, .02), R.z)), uSunDir), 0.), 14.); float gsum = 0.;
           for (int k = 0; k < 2; k++){ float sc = (k == 0 ? 4.2 : 2.1); vec2 gq = vW.xz * sc + vec2(uTime * .35, uTime * .8) * (k == 0 ? 1. : .5); vec2 ce = floor(gq); float hh = hash2(ce + float(k) * 31.); float tw = pow(max(sin(uTime * (2.5 + hh * 4.) + hh * 80.), 0.), 10.); vec2 f = fract(gq) - .5; gsum += tw * smoothstep(.34, .0, length(f * vec2(.7, 2.2))) * (k == 0 ? exp(-dist * .022) : exp(-dist * .006)); }
           col += uSunCol * toward * gsum * sh * vSunW * 5. * (1. - volc);
-          float broad = pow(max(dot(normalize(R * vec3(1., .55, 1.)), normalize(uSunDir * vec3(1., .55, 1.))), 0.), 70.); col += uSunCol * broad * .75 * smoothstep(.55, .95, h) * sh * vSunW * (1. - hit * .7) * (1. - volc); }
+          float broad = (1. - .6 * pinkK) * pow(max(dot(normalize(R * vec3(1., .55, 1.)), normalize(uSunDir * vec3(1., .55, 1.))), 0.), 70.); col += uSunCol * broad * .75 * smoothstep(.55, .95, h) * sh * vSunW * (1. - hit * .7) * (1. - volc); }
         col += phxLight(vW, N) * (.10 + .5 * pow(max(dot(R, normalize(uPhx - vW)), 0.), 24.));
         float foam = exp(-dist * .022) * smoothstep(.45, .05, depth) * smoothstep(.42,.62, n2(vW.xz * 1.3 + vec2(uTime * .3, -uTime * .6))) * (1. - bump(U, 3.2, .4, .3) * .7);
         { vec2 ip = vW.xz - vec2(${(FALL.x + 15).toFixed(2)}, ${FALL.z.toFixed(1)}); float id = length(ip * vec2(1., .8));
           if (id < 34.) { float ring = fbm2(vec2(id * .55 - uTime * 1.5, atan(ip.y, ip.x) * 3.)); float churn = fbm2(ip * .5 + vec2(uTime * .9, -uTime * .6)); float fm = smoothstep(22., 3., id + (churn - .5) * 13.) + smoothstep(.55,.75, ring) * smoothstep(34., 8., id) * .5; foam = max(foam, clamp(fm, 0., 1.) * 1.5); } }
         col = mix(col, (uSky * .5 + uSunCol * .25) * .8, min(foam * .55, .9));
+        if (pinkK > .01) { vec2 pq = (vW.xz + vec2(sin(vW.z * .15 + uTime * .1), uTime * .12)) * 3.2; vec2 pc = floor(pq); float ph = hash2(pc); vec2 pf = fract(pq) - .5 - (vec2(hash2(pc + 3.), hash2(pc + 7.)) - .5) * .5; float ca = cos(ph * 40.), sa = sin(ph * 40.); pf = mat2(ca, -sa, sa, ca) * pf; float pet = step(1. - .60 * smoothstep(.36,.62, fbm2(vW.xz * .13 + 3.)), ph) * smoothstep(.26, .18, length(pf * vec2(1., 1.6))); col = mix(col, mix(vec3(.86,.30,.48), vec3(.98,.70,.79), fract(ph * 17.)) * (uSunCol * .3 * sh + uSky * .55), pet * pinkK * smoothstep(70., 20., dist)); }
         if (volc > .01) {
           vec2 lp = vW.xz * .085 + vec2(0., uTime * .16); vec2 wq = vec2(fbm2(lp * .8 + 3.), fbm2(lp * .8 + 8. - uTime * .02)); vec2 q = lp + wq * 1.8;
           float plates = fbm2(q), seams = 1. - abs(fbm2(q * 2.1 + wq) * 2. - 1.), heat = smoothstep(.60, .30, plates) * .85 + pow(seams, 7.) * .75; heat *= mix(.5, 1., smoothstep(-.2, 1.6, depth)); heat = clamp(heat + smoothstep(.5,.0,depth) * .25, 0., 1.4);
@@ -278,8 +295,9 @@ export function createWater(u) {
 
 // ---------- perches: one standing rock every few metres of flight path, on the camera's side of the water
 export function createPerches() {
-  const out = [], camSide = (z) => { const p = Math.min(STOPS.length - 1.001, Math.max(0, FIRST - z / STOP_GAP)), i = Math.floor(p), f = smooth(0, 1, p - i); return Math.sin(lerp(STOPS[i].az, STOPS[i + 1].az, f) * Math.PI / 180) >= 0 ? 1 : -1; };
-  for (let z = 142; z > -2180; z -= 26) {
+  const out = [], camSide = (z) => { const p = Math.min(STOPS.length - 1.001, pOf(z)), i = Math.floor(p), f = smooth(0, 1, p - i); return Math.sin(lerp(STOPS[i].az, STOPS[i + 1].az, f) * Math.PI / 180) >= 0 ? 1 : -1; };
+  for (let z = 454; z > -2180; z -= 26) {
+    if (Math.abs(z) < 75) continue;
     const side = camSide(z), c = center(z); let d = riverWidth(z) + 3; while (height(c + side * d, z) < 2.3 && d < 120) d += 1;
     d += 2; const x = c + side * d, g = height(x, z), top = g + 5 + 1.6 * Math.abs(noise(z * 0.7, 2));
     out.push({ x, z, ground: g, y: top });
@@ -293,7 +311,7 @@ function rockGeometry(detail, seed, flatten = 1) {
     v.multiplyScalar(k); const q = 0.32; v.y = lerp(v.y, Math.round(v.y / q) * q, 0.45) * flatten; p.setXYZ(i, v.x, v.y, v.z); }
   g.computeVertexNormals(); return g;
 }
-function spireGeometry() {
+export function spireGeometry() {
   const N = 40, M = 30, pos = [], idx = [];
   for (let j = 0; j <= M; j++) { const t = j / M; // 0 top, 1 base
     for (let i = 0; i <= N; i++) { const a = (i % N) / N * 6.2832, cx = Math.cos(a), cz = Math.sin(a), lip = Math.min(1, j / 4);
@@ -306,10 +324,10 @@ function spireGeometry() {
 export function createRocks(u, low, perches) {
   const g = new THREE.Group(), mat = groundMaterial(u, { rock: true }), R = rng(31), M = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s = new THREE.Vector3();
   const sp = new THREE.InstancedMesh(spireGeometry(), mat, perches.length);
-  perches.forEach((k, i) => sp.setMatrixAt(i, M.compose(p.set(k.x, k.y, k.z), q.setFromEuler(e.set(0, i * 2.4, 0)), s.set(1, 1, 1)))); sp.computeBoundingSphere(); g.add(sp);
+  perches.forEach((k, i) => k.noRock || sp.setMatrixAt(i, M.compose(p.set(k.x, k.y, k.z), q.setFromEuler(e.set(0, i * 2.4, 0)), s.set(1, 1, 1)))); sp.computeBoundingSphere(); g.add(sp);
   const geos = [rockGeometry(2, 1, 0.75), rockGeometry(2, 8, 0.9), rockGeometry(2, 23, 0.6)], lists = geos.map(() => []);
   const n = low ? 900 : 2600;
-  for (let i = 0; i < n; i++) { const z = 860 - R() * 3550, side = R() < 0.5 ? -1 : 1, rw = riverWidth(z), near = R() < 0.4, d = near ? rw - 1 + R() * 9 : rw + R() * R() * 110, x = center(z) + side * d, y = height(x, z);
+  for (let i = 0; i < n; i++) { const z = 1160 - R() * 3850, side = R() < 0.5 ? -1 : 1, rw = riverWidth(z), near = R() < 0.4, d = near ? rw - 1 + R() * 9 : rw + R() * R() * 110, x = center(z) + side * d, y = height(x, z);
     if (y < -0.6 || y > 60) continue; const sc = near ? 0.25 + R() * R() * 1.5 : 0.35 + Math.pow(R(), 4) * 4.2;
     if (perches.some((k) => Math.abs(k.z - z) < 7 && Math.abs(k.x - x) < 7)) continue;
     lists[i % 3].push(M.clone().compose(p.set(x, y - sc * 0.12, z), q.setFromEuler(e.set(R() * 0.5, R() * 6.28, R() * 0.5)), s.set(sc, sc * (0.7 + R() * 0.4), sc * (0.8 + R() * 0.5)))); }
@@ -320,7 +338,7 @@ export function createRocks(u, low, perches) {
 }
 
 // ---------- conifers: branch-level geometry up close, simple cones far away
-function pineNear(mid = false) {
+export function pineNear(mid = false) {
   const R = rng(12), pos = [], uv = [], nor = [], sh = [], V = (p, u, n, s) => { pos.push(...p); uv.push(...u); nor.push(...n); sh.push(s); };
   for (let i = 0; i < 6; i++) { const a = i * 1.047, b = a + 1.047, r = 0.026; const P = (t, y, k) => [Math.cos(t) * k, y, Math.sin(t) * k], n = [Math.cos(a), 0, Math.sin(a)];
     V(P(a, -0.1, r), [9, 0], n, 0); V(P(b, -0.1, r), [9, 0], n, 0); V([0, 0.97, 0], [9, 1], n, 0); }
@@ -354,26 +372,33 @@ const NEEDLE = /* glsl */ ` float COV = 1.;
     float cv = min((prof * (.6 + .5 * rag) - au) / max(fwidth(au), .01), (comb - .22 - au * .42) / max(fwidth(comb), .06)) + .5; if (au < .07) cv = 1.; if (cv < .08) discard; COV = clamp(cv, 0., 1.); }
   else if (vU.x < 6.) { float nd = n3(vW * vec3(5.,3.,5.)) * .7 + n3(vW * 13.) * .3; if (nd < vU.y * 1.15 - .42) discard; }`;
 
-export function createTrees(u, low, perches) {
-  const near = pineNear(), mid = pineNear(true), far = pineFar(), R = rng(77);
+function treeMaterial(u) {
   const mat = new THREE.ShaderMaterial({ uniforms: u, side: THREE.DoubleSide, vertexShader: TREE_VS,
     fragmentShader: GLSL + SHADOW + /* glsl */ `varying vec3 vW, vN; varying vec2 vU; varying float vS, vR, vSun;
-      void main(){ ${BIOME} float dist = length(cameraPosition - vW); if (dist < 9. && hash2(gl_FragCoord.xy) > smoothstep(3., 9., dist)) discard;
+      void main(){ ${BIOME} float dist = length(cameraPosition - vW); if (dist < 14. && hash2(gl_FragCoord.xy) > smoothstep(5., 14., dist)) discard;
         ${NEEDLE}
         vec3 N = normalize(normalize(vN) + vec3(0.,.35,0.)); float nz = n3(vW * 5.);
         vec3 alb = mix(vec3(.014,.034,.016), vec3(.05,.075,.024), vR) * (.35 + vS * 1.5) * (.65 + .6 * nz);
         if (vU.x > 6.) alb = vec3(.075,.048,.032) * (.6 + nz * .7);
         alb = mix(alb, vec3(.72,.78,.86), snowy * smoothstep(.38,.75, vS + (nz-.5) * .5) * step(vU.x, 6.));
+        alb = mix(alb, alb * vec3(.45,.62,.80), hiA);
         float sh = vSun * mix(1., castShadow(vW, N), .85);
         vec3 V = normalize(cameraPosition - vW); float back = pow(max(dot(-V, uSunDir), 0.), 4.);
         vec3 col = alb * (uSunCol * sh * (.22 + .78 * max(dot(N, uSunDir), 0.) + back * .9) + mix(uGround, uSky, N.y*.5+.5) * (.35 + vS * .45) + phxLight(vW, N));
         gl_FragColor = vec4(fogged(col, vW), COV); }` });
   mat.alphaToCoverage = true;
+  return mat;
+}
+export function pineMesh(u, mats) { const m = new THREE.InstancedMesh(pineNear(false), treeMaterial(u), mats.length); mats.forEach((x, i) => m.setMatrixAt(i, x)); m.frustumCulled = false; return m; }
+
+export function createTrees(u, low, perches) {
+  const near = pineNear(), mid = pineNear(true), far = pineFar(), R = rng(77);
+  const mat = treeMaterial(u);
   const depth = new THREE.ShaderMaterial({ uniforms: u, side: THREE.DoubleSide, defines: { DEPTHPASS: 1 }, vertexShader: TREE_VS, fragmentShader: GLSL + `varying vec3 vW; varying vec2 vU; varying float vR; void main(){ ${NEEDLE} gl_FragColor = vec4(1.); }` });
-  const max = low ? 2600 : 8900, M = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), list = [];
+  const max = low ? 2800 : 9600, M = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), list = [];
   for (let t = 0; t < max * 14 && list.length < max; t++) {
-    const z = 900 - R() * 3600, U = -z / STOP_GAP, x = center(z) + (R() < 0.5 ? -1 : 1) * (12 + R() * R() * 200), y = height(x, z);
-    const dens = 1 - bump(U, 2.12, 0.6, 0.3) * 0.97 - bump(U, 5.5, 0.75, 0.35);
+    const z = 1200 - R() * 3900, U = -z / STOP_GAP, x = center(z) + (R() < 0.5 ? -1 : 1) * (Math.max(17, riverWidth(z) + 7) + R() * R() * 195), y = height(x, z);
+    const UW = U + 0.3 * noise(x * 0.011 + 4, z * 0.011) + 0.12 * noise(x * 0.05, z * 0.05), dens = 1 - bump(UW, 2.12, 0.5, 0.5) * 0.97 - bump(UW, 5.5, 0.7, 0.5) - bump(UW, 0, 0.18, 0.5) * 0.96;
     if (y < 2.6 || y > 92 || Math.hypot(x - CONE.x, z - CONE.z) < 170 || (Math.abs(z - FALL.z) < 34 && x > FALL.x - 48 && fallCliff(x, z) < 24) || (z - FALL.z > -100 && z - FALL.z < 34 && x > center(z) - 4 && x < FALL.x - 4) || R() > dens || noise(x * 0.018, z * 0.018) + 0.28 < R() * 0.7) continue;
     if (Math.hypot(height(x + 2, z) - y, height(x, z + 2) - y) > 2) continue;
     if (perches.some((k) => Math.abs(k.z - z) < 17 && Math.hypot(k.x - x, k.z - z) < 15)) continue;
@@ -401,11 +426,11 @@ export function createGrass(u, low) {
         float patchy = smoothstep(.3, .6, fbm2(c * .09) + aO.w * .18 - .06);
         float edge = smoothstep(${(size / 2).toFixed(1)}, ${(size * 0.34).toFixed(1)}, length(c - f));
         float k = patchy * edge * smoothstep(1.4, 2.3, vW.y) * smoothstep(.75, .4, sl) * (1. - volc) * (1. - snowy * .85) * mix(1., step(.72, aO.w), canyon);
-        float s = k * (.35 + .55 * aO.w) * mix(1., .8, canyon); float ca = cos(aO.z), sa = sin(aO.z); vec3 p = position; p.xz = mat2(ca, -sa, sa, ca) * p.xz; if (aO.w > .93 && p.y > .9) p.xz *= 1.9;
+        float s = k * (.35 + .55 * aO.w) * mix(1., .8, canyon); float ca = cos(aO.z), sa = sin(aO.z); vec3 p = position; p.xz = mat2(ca, -sa, sa, ca) * p.xz; if (aO.w > .93 - .22 * pinkK && p.y > .9) p.xz *= 1.9;
         p.xz += vec2(.22, .1) * p.y * p.y * (sin(uTime * 2.2 + c.x * .4 + c.y * .3) + .4); vW += p * vec3(s * 1.2, s, s * 1.2); vY = position.y; vR = aO.w; vSun = sunVis(vec3(c.x, vW.y + .5, c.y), uSunDir);
         gl_Position = k < .05 ? vec4(2.,2.,2.,1.) : projectionMatrix * viewMatrix * vec4(vW, 1.); }`,
     fragmentShader: GLSL + SHADOW + /* glsl */ `varying vec3 vW; varying float vY, vR, vSun; void main(){ ${BIOME}
-      vec3 alb = mix(mix(vec3(.03,.05,.012), vec3(.17,.19,.05), vY), vec3(.34,.29,.12), vR * vR * .6); alb = mix(alb, mix(vec3(.16,.10,.045), vec3(.48,.36,.17), vY), canyon); alb = mix(alb, vec3(.5,.5,.48), snowy * .5); float fl = step(.93, vR) * step(.72, vY) * (1. - canyon) * (1. - snowy); float hue = fract(vR * 97.); alb = mix(alb, hue < .4 ? vec3(.78,.74,.66) : hue < .75 ? vec3(.80,.52,.06) : vec3(.55,.16,.34), fl);
+      vec3 alb = mix(mix(vec3(.03,.05,.012), vec3(.17,.19,.05), vY), vec3(.34,.29,.12), vR * vR * .6); alb = mix(alb, mix(vec3(.16,.10,.045), vec3(.48,.36,.17), vY), canyon); alb = mix(alb, vec3(.5,.5,.48), snowy * .5); float fl = step(.93 - .22 * pinkK, vR) * step(.72, vY) * (1. - canyon) * (1. - snowy); float hue = fract(vR * 97.); alb = mix(alb, hue < .4 ? vec3(.78,.74,.66) : hue < .75 ? vec3(.80,.52,.06) : vec3(.55,.16,.34), fl);
       vec3 V = normalize(cameraPosition - vW); float sh = vSun * castShadow(vW, vec3(0.,1.,0.));
       vec3 col = alb * (uSunCol * sh * (max(uSunDir.y, 0.) * .6 + .25 + .7 * pow(max(dot(-V, uSunDir), 0.), 3.)) + mix(uGround, uSky, .85) * .55 * (.4 + .6 * vY) + phxLight(vW, vec3(0.,1.,0.)));
       gl_FragColor = vec4(fogged(col, vW), 1.); }` }));
