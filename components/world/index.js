@@ -28,7 +28,7 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   const phx = createPhoenix(u), fire = createFire(u, low ? 1300 : 3000);
   phx.group.rotation.order = 'YXZ';
   const kick = () => request(), flora = createFlora(u, low, kick);
-  const terrain = createTerrain(u, low), perches = createPerches(), cherry = createCherry(u, low, perches, flora, kick), isles = createIsles(u, low, perches, flora), falls = createWaterfall(u, low), trees = createTrees(flora, low, perches), rocks = createRocks(u, low, perches, kick), bird = createBehaviour(perches);
+  const terrain = createTerrain(u, low), perches = createPerches(), cherry = createCherry(u, low, perches, flora, kick), isles = createIsles(u, low, perches, flora), falls = createWaterfall(u, low, kick), trees = createTrees(flora, low, perches), rocks = createRocks(u, low, perches, kick), bird = createBehaviour(perches);
   const water = createWater(u), grass = createGrass(u, low, kick), mist = createMist(u, low), valley = [terrain, water, trees, rocks, grass, mist];
   const smoke = createSmoke(u);
   scene.add(createSky(u), terrain, water, trees, rocks, grass, mist, smoke, falls, cherry, isles, createPetals(u, low), createAir(u, low), phx.group, fire.mesh);
@@ -157,11 +157,11 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
     const lowK = smooth(0.04, 0.12, -mixN('sy')), dist = mixN('dist') * lerp(1, lerp(0.74, 1.08, lowK), restK) * (tall ? 1.75 : W / H < 1.2 ? 1.3 : 1);
     camPos.set(focus.x + Math.sin(ang) * dist, focus.y + lerp(mixN('up'), STOPS[Math.round(P)].tag === 'isles' ? 0.2 : 1.1, restK) - cmy * 1.6, focus.z + Math.cos(ang) * dist);
     const floor = height(camPos.x, camPos.z) + 2.2; camPos.y = Math.max(camPos.y, floor, 2); camera.position.copy(camPos); camera.lookAt(a.copy(focus));
-    const sx = tall ? 0 : sxRaw * (W / H < 1.2 ? 0.6 : 1), sy = tall ? -0.26 : mixN('sy') - lowK * restK * 0.05;
+    const sx = tall ? 0 : sxRaw * (W / H < 1.2 ? 0.6 : 1), gorge = Math.max(0, 1 - Math.abs(P - at('labs')) / 0.62), sy = tall ? -0.26 : mixN('sy') - lowK * restK * 0.05 + smooth(0, 0.55, gorge) * (1 - restK) * 0.09;
     camera.setViewOffset(W, H, -sx * W, -sy * H, W, H);
-    trees.userData.lod(camPos.z);
+    trees.userData.lod(camPos.z); rocks.userData.lod(camPos.z);
     // above the clouds the valley is hidden, and far-off set pieces are skipped
-    const high = smooth(330, 390, camPos.y); u.uHigh.value = high; for (const o of valley) o.visible = camPos.y < 395; isles.visible = camPos.y > 312; cherry.visible = Math.abs(camPos.z) < 420 && camPos.y < 200; falls.visible = Math.abs(camPos.z + 243) < 620 && camPos.y < 200; smoke.visible = camPos.y < 395;
+    const high = smooth(330, 390, camPos.y); u.uHigh.value = high; for (const o of valley) o.visible = camPos.y < 395; isles.visible = camPos.y > 312; cherry.visible = Math.abs(camPos.z) < 420 && camPos.y < 200; falls.visible = Math.abs(camPos.z + 258) < 1000 && camPos.y < 200; smoke.visible = camPos.y < 395;
     u.uEmber.value = smooth(at('interests') - 0.2, at('interests') + 0.15, P) * 0.22 + smooth(at('interests') + 0.05, at('interests') + 0.6, P) * 0.78 * (1 - smooth(LAB - 0.15, LAB, P) * 0.9);
     grade.uniforms.uT.value = time; grade.uniforms.uRush.value += (bird.pos.y - rushY) * 0.012; rushY = bird.pos.y;
     grade.uniforms.uVeil.value = Math.exp(-Math.pow((camPos.y - 345) / 66, 2)); grade.uniforms.uVeilC.value.copy(u.uFog.value).lerp(u.uSky.value, 0.4).multiplyScalar(0.9); grade.uniforms.uVeilC.value.r += u.uEmber.value * 0.16; grade.uniforms.uVeilC.value.g += u.uEmber.value * 0.035;
@@ -176,7 +176,7 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   function draw(now) {
     frame = 0; if (dead) return;
     const raw = (now - last) / 1000, dt = Math.min(0.05, Math.max(0.001, raw)); last = now; if (!reduced) time += dt;
-    update(dt, now); if (isles.visible) isles.userData.shadow(renderer, pal[at('interests')].sunDir); renderSun(); if ((shadowTick ^= 1) || reduced) renderShadow(phxPos); composer.render();
+    update(dt, now); if (isles.visible) isles.userData.shadow(renderer, pal[at('interests')].sunDir); renderSun(); if (falls.visible) falls.userData.shadow(renderer, u.uSunDir.value); if ((shadowTick ^= 1) || reduced) renderShadow(phxPos); composer.render();
     if (texLeft <= 0 && flora.left() <= 0) el.classList.add('ready');
     // step resolution down on slow machines
     if (!reduced && !document.hidden && raw < 0.5 && now > bornAt + 3000) { frames++; if (raw > 0.030) slow++; if (frames >= 90) { if (slow > 55 && dpr > 0.9) { dpr = Math.max(0.9, dpr - 0.2); resize(); } frames = slow = 0; } }
@@ -193,5 +193,5 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   el.appendChild(renderer.domElement); resize(); request();
 
   return () => { dead = true; cancelAnimationFrame(frame); ro.disconnect(); window.removeEventListener('scroll', onScroll); window.removeEventListener('pointermove', onPointer); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('phoenix', onPhoenix);
-    scene.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); }); shadowRT.dispose(); sunRT.dispose(); sunQuad.material.dispose(); sunQuad.dispose(); loaded.forEach((t) => t.dispose()); u.uHMap.value?.dispose(); casters.forEach((c) => c.userData.depthMat.dispose()); flora.dispose(); rocks.userData.stop(); cherry.userData.stop(); grass.userData.stop(); isles.userData.stop(); composer.passes.forEach((p) => p.dispose?.()); composer.dispose(); renderer.dispose(); renderer.domElement.remove(); el.classList.remove('ready'); };
+    scene.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); }); shadowRT.dispose(); sunRT.dispose(); sunQuad.material.dispose(); sunQuad.dispose(); loaded.forEach((t) => t.dispose()); u.uHMap.value?.dispose(); casters.forEach((c) => c.userData.depthMat.dispose()); flora.dispose(); rocks.userData.stop(); cherry.userData.stop(); grass.userData.stop(); isles.userData.stop(); falls.userData.stop(); composer.passes.forEach((p) => p.dispose?.()); composer.dispose(); renderer.dispose(); renderer.domElement.remove(); el.classList.remove('ready'); };
 }

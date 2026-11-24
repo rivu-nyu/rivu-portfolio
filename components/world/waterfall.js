@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLSL, SHADOW, HMAP, rng, lerp, smooth, noise } from './common';
-import { FALL, height } from './landscape';
+import { FALL, FALLS, height } from './landscape';
+import { createGorge } from './gorge';
 
 export function fallMaterial(u, fade = false) {
   const m = new THREE.ShaderMaterial({ uniforms: u, side: THREE.DoubleSide, transparent: true, depthWrite: false,
@@ -47,69 +48,61 @@ export function fallMaterial(u, fade = false) {
   return m;
 }
 
-// Falling water as layered sheets that follow the cliff profile, plus spray, drifting mist and a faint rainbow.
-export function createWaterfall(u, low) {
-  const group = new THREE.Group(), R = rng(19), X = FALL.x, Z = FALL.z;
-  // where the rock face lies at this z: walk inward until the ground reaches a height
-  const faceX = (z, y, from) => { for (let x = from; x < X + 60; x += 0.4) if (height(x, z) > y) return x; return X + 60; };
-  const sheets = [];
-  const add = (z0, w, o) => sheets.push({ z0, w, ...o });
-  // back curtain, body, then loose outer strands: depth comes from many overlapping layers
-  add(0, 9.2, { push: 0.5, seed: 0.05, dens: 1.15 }); add(0.4, 8.4, { push: 1.3, seed: 0.1, dens: 1.1 }); add(-0.6, 7.4, { push: 2.1, seed: 0.5, dens: 1 }); add(1.2, 5.6, { push: 3.0, seed: 0.27, dens: 0.9 }); add(-2.2, 4.6, { push: 3.5, seed: 0.62, dens: 0.8 }); add(0.2, 3.4, { push: 4.3, seed: 0.83, dens: 0.75 }); add(3.6, 2.4, { push: 3.9, seed: 0.71, dens: 0.6 });
-  add(-14.5, 1.7, { push: 1.0, seed: 0.3, dens: 0.8 }); add(13.8, 2.0, { push: 1.1, seed: 0.65, dens: 0.8 }); add(18.4, 0.8, { push: 0.8, seed: 0.9, dens: 0.6 }); add(-18.6, 0.8, { push: 0.8, seed: 0.45, dens: 0.6 });
-  const pos = [], uv = [], data = [], idx = [];
-  const ribbon = (path, s, tier, flare) => { const n = path.length, M = 22, base = pos.length / 3; let len = 0;
-    for (let j = 0; j < n; j++) { if (j) len += path[j].distanceTo(path[j - 1]); const f = j / (n - 1);
-      for (let i = 0; i <= M; i++) { const a = i / M * 2 - 1, w = s.w * (1 + flare * f) * (tier === 2 ? 1.2 : 1); const z = Z + s.z0 + a * w, bow = (1 - a * a) * 0.5;
-        pos.push(path[j].x - bow + 0.35 * noise(a * 2 + s.seed * 9, f * 3), path[j].y, z); uv.push(a, len); data.push(f, s.seed, s.dens, tier); } }
-    for (let j = 0; j < n - 1; j++) for (let i = 0; i < M; i++) { const k = base + j * (M + 1) + i; idx.push(k, k + 1, k + M + 1, k + 1, k + M + 2, k + M + 1); } };
-  for (const s of sheets) {
-    const z = Z + s.z0, lipX = faceX(z, FALL.top - 5, X + 12), topY = height(lipX + 5, z) + 0.6, lowX = faceX(z, FALL.ledge - 5, X + 4), ledgeY = FALL.ledge + 1.0;
-    const V = (x, y) => new THREE.Vector3(x, y, z);
-    // plateau run-in, upper fall, ledge, main fall
-    const up = [V(lipX + 11, height(lipX + 11, z) + 0.45), V(lipX + 5, topY)]; for (let i = 0; i <= 14; i++) { const t = i / 14; up.push(V(lerp(lipX + 1.2, lipX - 2.2 - s.push * 0.5, Math.sqrt(t)), lerp(topY - 0.3, ledgeY, t * t * 0.55 + t * 0.45))); }
-    ribbon(up, s, 1, 0.1);
-    const dn = [V(lipX - 1.5, ledgeY + 0.35), V(lerp(lipX, lowX, 0.6), ledgeY + 0.3)]; for (let i = 0; i <= 34; i++) { const t = i / 34; dn.push(V(lerp(lowX + 0.6, lowX - 2.2 - s.push * 1.5, Math.pow(t, 0.6)), lerp(ledgeY, -0.2, t * t * 0.6 + t * 0.4))); }
-    ribbon(dn, s, 2, 0.28);
-    s.base = new THREE.Vector3(lowX - 2.5 - s.push * 1.3, 0.3, z);
+// Many falls gathering into one: every sheet of water follows the measured face of the rock it runs down.
+export function createWaterfall(u, low, onLoad) {
+  const R = rng(19), X = FALL.x, Z = FALL.z, hitsBase = [], hitsLedge = [], feet = [];
+  let spray, gone = false;
+  const group = createGorge(u, low, build, onLoad), stopGorge = group.userData.stop; group.userData.stop = () => { gone = true; stopGorge(); };
+
+  function build(D, sample) {
+    if (gone) return; const pos = [], uv = [], data = [], idx = [];
+    for (const f of FALLS) {
+      const M = Math.max(8, Math.round(f.w * 3.2)), cols = [], half = M / 2; let footX = 0, baseY = 0;
+      const rock = (s, y, d) => Math.min(sample(D[f.tier], s, y), d); { let top = -1; for (let y = f.lip + 1; y > 5; y -= 0.5) if (sample(D[f.tier], f.s, y) < 1e3) { top = y; break; } if (top < 0) continue; f.lip = Math.min(f.lip, top - 0.2); }
+      // where the middle of the fall leaves the lip, and where it lands
+      const mid = rock(f.s, f.lip - 1.2, 1e4), march = (s, lip, x0) => { const path = []; let x = x0, y = lip; for (let g = 0; g < 400; g++) { const r = rock(s, y, 1e4); x = Math.min(x - 0.012, r > 1e3 ? x : r - 0.35); path.push([x, y]); const floor = f.tier === 1 ? -0.25 : height(x - 0.8, Z + s) + 0.2; if (y <= floor) break; y -= 0.4; } return path; };
+      const core = march(f.s, f.lip, Math.min(rock(f.s, f.lip - 0.8, mid), mid + 2.5)); baseY = core[core.length - 1][1]; const drop = f.lip - baseY; if (drop < 5) continue; const N = Math.round(Math.min(54, 16 + drop * 0.9));
+      const layers = f.tier === 1 && f.w > 4 ? 4 : f.w > 3 ? 4 : f.w > 1.5 ? 3 : 2;
+      for (let i = 0; i <= M; i++) { const a = i / M * 2 - 1, s = f.s + a * f.w, path = march(s, f.lip, Math.min(rock(s, f.lip - 0.8, 1e4), mid + 2.5)), col = []; for (let j = 0; j <= N; j++) { const t = j / N, y = f.lip - drop * (0.5 * t + 0.5 * t * t), k = Math.max(0, Math.min(path.length - 1, (f.lip - y) / 0.4)), k0 = Math.floor(k), k1 = Math.min(path.length - 1, k0 + 1); col.push(lerp(path[k0][0], path[k1][0], k - k0)); } cols.push(col); }
+      for (let j = 0; j <= N; j++) { const h = Math.round(half), lim = 2.6 * f.w / M + 0.25; for (let i = h + 1; i <= M; i++) cols[i][j] = Math.max(cols[i - 1][j] - lim, Math.min(cols[i - 1][j] + lim, cols[i][j])); for (let i = h - 1; i >= 0; i--) cols[i][j] = Math.max(cols[i + 1][j] - lim, Math.min(cols[i + 1][j] + lim, cols[i][j])); }
+      // neighbouring strands pull together, so the sheet stays a sheet
+      for (let k = 0; k < 2; k++) for (let j = 0; j <= N; j++) { const c = cols.map((q) => q[j]); for (let i = 1; i < M; i++) cols[i][j] = Math.min(c[i] + 0.2, (c[i - 1] + 2 * c[i] + c[i + 1]) / 4); }
+      for (let l = 0; l < layers; l++) { const w = 1 - l * (0.5 / layers), push = l * (f.tier === 1 ? 0.75 : 0.4), off = l ? (R() - 0.5) * f.w * 0.5 : 0, seed = R(), dens = f.dens * (1.12 - l * 0.1), b = pos.length / 3; let len = 0; const run = 3;
+        for (let j = -run; j <= N; j++) { const t = Math.max(0, j) / N, y0 = f.lip + (j <= 0 ? 0.28 - j * 0.22 : 0) - drop * (0.5 * t + 0.5 * t * t); len += j <= 0 ? 1.6 : drop / N * (0.5 + t);
+          for (let i = 0; i <= M; i++) { const a = i / M * 2 - 1, c = cols[Math.max(0, Math.min(M, Math.round((a * w + off / f.w + 1) * half)))], x = c[Math.max(0, j)] - push * Math.sqrt(t) - (1 - a * a) * 0.35 * t - (j < 0 ? j * 1.9 : 0), s = f.s + (a * w + off / f.w) * f.w * (1 + 0.16 * t * (f.tier === 1 ? 1 : 1.6)); pos.push(x + 0.3 * noise(a * 2 + seed * 9, t * 4), y0 + 0.9 * (1 - t) * noise(a * 2.2 + f.s, seed * 3) * (f.w > 2 ? 1 : 0.3), Z + s); uv.push(a, len); data.push(j < 0 ? 0.0 : Math.max(0.02, t), seed, dens, f.tier === 1 ? 2 : 1); } }
+        for (let j = 0; j < N + run; j++) for (let i = 0; i < M; i++) { const k = b + j * (M + 1) + i; idx.push(k, k + 1, k + M + 1, k + 1, k + M + 2, k + M + 1); }
+        if (l === layers - 1) footX = cols[Math.round(half)][N] - push; }
+      const foot = { p: new THREE.Vector3(footX, Math.max(baseY, f.tier === 1 ? 0.2 : baseY), Z + f.s), w: f.w, k: f.dens, tier: f.tier, f }; feet.push(foot); (f.tier === 1 ? hitsBase : hitsLedge).push(foot);
+    }
+    // white water running down through the boulders until it all meets above the great fall
+    for (const h of feet) { if (h.tier !== 2) continue; const main = FALLS[0], T = 34, K = 6, tgtS = Math.max(-8.5, Math.min(8.5, h.f.s * 0.16)), x0 = h.p.x - 0.5, x1 = X + 44, w = Math.min(3.4, 1.0 + h.w * 0.45);
+      for (let l = 0; l < 2; l++) { const b = pos.length / 3, seed = R(); let len = 0; for (let j = 0; j <= T; j++) { const t = j / T, x = lerp(x0, x1 - 6 * smooth(0.7, 1, t), t), q = t * t * (3 - 2 * t), s = lerp(h.f.s, tgtS, q) + 5 * Math.sin(Math.PI * t) * noise(t * 3.1 + h.f.s, 4) + 1.6 * noise(t * 9, h.f.s); len += 2; for (let i = 0; i <= K; i++) { const a = i / K * 2 - 1, ww = w * lerp(1, 1.5, t) * (l ? 0.7 : 1); const zz = Z + s + a * ww; pos.push(x + 0.5 * noise(t * 20, a + seed), Math.max(height(x, zz), height(x, Z + s) - 0.5) + 0.42 + l * 0.25 + 0.2 * (1 - a * a), zz); uv.push(a, len); data.push(0.42, seed, 0.95, 1); } }
+        for (let j = 0; j < T; j++) for (let i = 0; i < K; i++) { const k = b + j * (K + 1) + i; idx.push(k, k + 1, k + K + 1, k + 1, k + K + 2, k + K + 1); } } }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setAttribute('aD', new THREE.Float32BufferAttribute(data, 4)); g.setIndex(idx);
+    const water = new THREE.Mesh(g, fallMaterial(u)); water.renderOrder = 2; water.frustumCulled = false; group.add(water);
+
+    // spray thrown up where the water lands, on the pool and on every ledge above it
+    const n = low ? 1200 : 4400, sg = new THREE.InstancedBufferGeometry(); sg.instanceCount = n; sg.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3)); sg.setIndex([0, 1, 2, 0, 2, 3]);
+    const o = new Float32Array(n * 3), v = new Float32Array(n * 4), big0 = hitsBase[0], main3 = hitsBase.filter((q) => q.w > 4);
+    for (let i = 0; i < n; i++) { const c = R(), h = c < 0.52 ? main3[Math.floor(R() * main3.length)] : c < 0.66 ? hitsBase[Math.floor(R() * hitsBase.length)] : hitsLedge[Math.floor(R() * hitsLedge.length)], drop = h.w > 4 && h.tier === 1 && R() < 0.22, y0 = drop ? h.p.y + 8 + R() * 16 : h.p.y; o.set([h.p.x + (R() - 0.5) * 2 + (drop ? 1.5 : 0), y0, h.p.z + (R() * 2 - 1) * h.w * 1.1], i * 3); if (drop) { v.set([-(0.2 + R() * 0.9), -20 - R(), (R() - 0.5) * 0.7, 0.018 + R() * 0.025], i * 4); continue; } const puff = R() < (h.tier > 1 ? 0.6 : 0.4), k = h.tier === 3 ? 2.2 : h.tier === 2 ? 1.5 : 1; v.set([-(0.6 + R() * 4.2) * k, 2 + R() * R() * 7, (R() - 0.5) * 4 * k, (puff ? 0.7 + R() * 1.3 : 0.02 + R() * 0.035) * k], i * 4); }
+    sg.setAttribute('aO', new THREE.InstancedBufferAttribute(o, 3)); sg.setAttribute('aV', new THREE.InstancedBufferAttribute(v, 4));
+    spray = new THREE.Mesh(sg, new THREE.ShaderMaterial({ uniforms: u, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      vertexShader: `uniform float uTime; attribute vec3 aO; attribute vec4 aV; varying vec2 vQ; varying float vA, vB; varying vec3 vW; void main(){ vQ = position.xy; float drop = step(aV.y, -10.); float life = mix(.7 + max(aV.y, 0.) * .16, 2.0, drop), t = fract(uTime / life + aO.x * 7.3 + aV.z * 3.1) * life; vA = t / life; vB = step(.3, aV.w); vec3 p = aO + vec3(aV.x, max(aV.y, 0.), aV.z) * t * mix(1., .5, vB); p.y -= mix(4.6, 5.6, drop) * t * t * mix(1., .25, vB); if (p.y < min(aO.y, 0.) - .5 && drop < .5) p.y = -50.; vW = p; vec4 m = viewMatrix * vec4(p, 1.); m.xy += position.xy * aV.w * mix(1., 1. + vA * 2.2, vB) * vec2(1., mix(mix(1.7, 2.5 + t * 5., drop), 1., vB)); gl_Position = projectionMatrix * m; }`,
+      fragmentShader: GLSL + `varying vec2 vQ; varying float vA, vB; varying vec3 vW; void main(){ float r = length(vQ); if (r > 1.) discard; float nz = mix(1., (n2(vQ * 1.8 + vW.zy * .5 + uTime * .2) * .6 + n2(vQ * 4. - uTime * .3) * .4) * 1.8, vB); float a = mix(smoothstep(1., .2, r), pow(max(1. - r, 0.), 1.6) * nz, vB) * (1. - vA) * smoothstep(0., .15, vA) * mix(.55, .15, vB); vec3 c = uSunCol * mix(.40, .26, vB) + uSky * .5; gl_FragColor = vec4(fogged(c, vW), a); }` }));
+    spray.frustumCulled = false; spray.renderOrder = 4; group.add(spray);
+
+    // mist hanging at the foot of every fall
+    for (const h of feet) { const k = h.tier === 1 ? (h.w > 4 ? 1 : h.w > 1.5 ? 1 : 0) : 1; for (let i = 0; i < k; i++) { const m = new THREE.Mesh(mg, mm); m.position.set(h.p.x - 2 - R() * 5, h.p.y + 3 + R() * 4 * h.tier, h.p.z + (R() - 0.5) * h.w * 2); m.scale.set((10 + h.w * 3.4) * (0.8 + 0.4 * h.tier), (7 + h.w * 1.6) * (0.8 + 0.3 * h.tier), 1); m.renderOrder = 5; group.add(m); } }
   }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setAttribute('aD', new THREE.Float32BufferAttribute(data, 4)); g.setIndex(idx); g.computeVertexNormals();
-  const water = new THREE.Mesh(g, fallMaterial(u));
-  water.renderOrder = 2; water.frustumCulled = false; group.add(water);
-
-  // spray thrown up where each strand lands
-  const n = low ? 700 : 2400, sg = new THREE.InstancedBufferGeometry(); sg.instanceCount = n; sg.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3)); sg.setIndex([0, 1, 2, 0, 2, 3]);
-  const o = new Float32Array(n * 3), v = new Float32Array(n * 4), hits = [...sheets.map((s) => ({ p: s.base, w: s.w * 1.25, k: s.dens })), ...sheets.slice(0, 3).map((s) => ({ p: new THREE.Vector3(s.base.x + 9, FALL.ledge + 0.9, Z), w: s.w * 0.9, k: 0.5 }))];
-  for (let i = 0; i < n; i++) { const h = hits[R() < 0.62 ? 0 : Math.floor(R() * hits.length)]; o.set([h.p.x + (R() - 0.5) * 2, h.p.y, h.p.z + (R() * 2 - 1) * h.w], i * 3); const drop = R() < 0.22; if (drop) { const h2 = sheets[Math.floor(R() * 5)]; o.set([h2.base.x + 1.2 - R() * 2.4, FALL.ledge - R() * 6, h2.base.z + (R() * 2 - 1) * h2.w * 1.15], i * 3); v.set([-(0.2 + R() * 0.9), -20 - R(), (R() - 0.5) * 0.7, 0.035 + R() * 0.05], i * 4); continue; } const big = R() < 0.34; v.set([-(0.6 + R() * 4.2), 2 + R() * R() * 7, (R() - 0.5) * 4, big ? 0.5 + R() * 0.7 : 0.05 + R() * 0.09], i * 4); }
-  sg.setAttribute('aO', new THREE.InstancedBufferAttribute(o, 3)); sg.setAttribute('aV', new THREE.InstancedBufferAttribute(v, 4));
-  const spray = new THREE.Mesh(sg, new THREE.ShaderMaterial({ uniforms: u, transparent: true, depthWrite: false, side: THREE.DoubleSide,
-    vertexShader: `uniform float uTime; attribute vec3 aO; attribute vec4 aV; varying vec2 vQ; varying float vA, vB; varying vec3 vW; void main(){ vQ = position.xy; float drop = step(aV.y, -10.); float life = mix(.7 + max(aV.y, 0.) * .16, 2.5, drop), t = fract(uTime / life + aO.x * 7.3 + aV.z * 3.1) * life; vA = t / life; vB = step(.3, aV.w); vec3 p = aO + vec3(aV.x, max(aV.y, 0.), aV.z) * t * mix(1., .5, vB); p.y -= mix(4.6, 5.6, drop) * t * t * mix(1., .25, vB); if (p.y < -.3) p.y = -50.; vW = p; vec4 m = viewMatrix * vec4(p, 1.); m.xy += position.xy * aV.w * mix(1., 1. + vA * 2.2, vB) * vec2(1., mix(mix(1.7, 2.5 + t * 5., drop), 1., vB)); gl_Position = projectionMatrix * m; }`,
-    fragmentShader: GLSL + `varying vec2 vQ; varying float vA, vB; varying vec3 vW; void main(){ float r = length(vQ); if (r > 1.) discard; float a = smoothstep(1., 0., r) * (1. - vA) * smoothstep(0., .1, vA) * mix(.75, .13, vB); vec3 c = uSunCol * mix(.62, .30, vB) + uSky * .45; gl_FragColor = vec4(fogged(c, vW), a); }` }));
-  spray.frustumCulled = false; spray.renderOrder = 4; group.add(spray);
-
-  // bubbling foam: shaded froth where the upper fall hits the ledge and where the main fall meets the pool
-  const fn = low ? 420 : 1500, fg = new THREE.InstancedBufferGeometry(); fg.instanceCount = fn; fg.setAttribute('position', sg.getAttribute('position')); fg.setIndex([0, 1, 2, 0, 2, 3]);
-  const fo = new Float32Array(fn * 4), fv = new Float32Array(fn * 4);
-  for (let i = 0; i < fn; i++) { const ledge = i < fn * 0.36, s = sheets[ledge ? Math.floor(R() * 4) : Math.floor(R() * sheets.length)], a = R() * 2 - 1, z = s.base.z + a * s.w * (ledge ? 1.12 : 1.3), k = R();
-    const x = ledge ? s.base.x + 4.5 + R() * 6.5 : s.base.x + 1.8 - k * k * 9, gy = ledge ? FALL.ledge + 0.75 + 0.5 * R() : 0.1 + 1.1 * (1 - k) * R();
-    fo.set([x, gy, z, R()], i * 4); fv.set([ledge ? 0.16 + R() * 0.36 : (0.16 + R() * 0.55) * (1 - k * 0.5), 0.5 + R() * 1.6, R() * 6.28, ledge ? 1 : 0], i * 4); }
-  fg.setAttribute('aO', new THREE.InstancedBufferAttribute(fo, 4)); fg.setAttribute('aV', new THREE.InstancedBufferAttribute(fv, 4));
-  const froth = new THREE.Mesh(fg, new THREE.ShaderMaterial({ uniforms: u, transparent: true, depthWrite: false, side: THREE.DoubleSide,
-    vertexShader: `precision highp float; uniform float uTime; uniform vec3 uSunDir; attribute vec4 aO, aV; varying vec2 vQ; varying float vA, vS, vSun; varying vec3 vW; ${HMAP} void main(){ vQ = position.xy; vS = aO.w; float t = fract(uTime * aV.y * .55 + aO.w); vA = sin(t * 3.1416); vec3 p = aO.xyz; p.x -= t * mix(1.6, 2.2, aV.w); p.y += sin(t * 3.1416) * mix(.55, .4, aV.w) * (.4 + aO.w); p.z += sin(uTime * 2.2 + aV.z) * .22; vW = p; vSun = sunVis(p + vec3(-5., 2., 0.), uSunDir); vec4 m = viewMatrix * vec4(p, 1.); m.xy += position.xy * aV.x * (.6 + .6 * vA); gl_Position = projectionMatrix * m; }`,
-    fragmentShader: GLSL + `varying vec2 vQ; varying float vA, vS, vSun; varying vec3 vW; void main(){ float r = length(vQ); if (r > 1.) discard; vec3 n = vec3(vQ, sqrt(1. - r * r)); vec3 right = vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]), up = vec3(viewMatrix[0][1],viewMatrix[1][1],viewMatrix[2][1]), fw = vec3(viewMatrix[0][2],viewMatrix[1][2],viewMatrix[2][2]); vec3 N = normalize(right * n.x + up * n.y + fw * n.z);
-      float cell = n2(vQ * 4.5 + vS * 60. + uTime * .6); float nl = max(dot(N, uSunDir) * .6 + .4, 0.); vec3 V = normalize(cameraPosition - vW); float sp = pow(max(dot(N, normalize(V + uSunDir)), 0.), 30.);
-      vec3 c = vec3(.90,.94,.96) * (.72 + .4 * cell) * (uSunCol * vSun * .42 * nl + mix(uGround, uSky, N.y * .5 + .5) * .5); float tw = step(.82, hash2(vec2(floor(uTime * 7. + vS * 30.), vS * 91.))); c += uSunCol * vSun * sp * (.35 + 2.4 * tw);
-      gl_FragColor = vec4(fogged(c, vW), smoothstep(1., .55, r + (cell - .5) * .5) * vA * .85); }` }));
-  froth.frustumCulled = false; froth.renderOrder = 4; group.add(froth);
 
   // drifting mist with a rainbow where the angle to the sun is right
   const mg = new THREE.PlaneGeometry(1, 1), mm = new THREE.ShaderMaterial({ uniforms: u, transparent: true, depthWrite: false,
     vertexShader: `varying vec2 vU; varying vec3 vW; void main(){ vU = uv; vec3 c = modelMatrix[3].xyz; vec3 r = vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]); vW = c + r * position.x * length(modelMatrix[0].xyz) + vec3(0.,1.,0.) * position.y * length(modelMatrix[1].xyz); gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.); }`,
-    fragmentShader: GLSL + /* glsl */ `varying vec2 vU; varying vec3 vW; void main(){ vec2 q = vU * 2. - 1.; float n = fbm2(vU * vec2(3.2, 2.4) + vec2(uTime * .06, -uTime * .22) + vW.z * .02); float m = smoothstep(1., .05, length(q * vec2(1., 1.05))); float a = m * smoothstep(.2, .75, n) * .30;
+    fragmentShader: GLSL + /* glsl */ `uniform sampler2D tNoise; varying vec2 vU; varying vec3 vW; void main(){ vec2 q = vU * 2. - 1.; vec2 np = vU * vec2(3.2, 2.4) + vec2(uTime * .06, -uTime * .22) + vW.z * .02; float n = texture2D(tNoise, np * .11).r * .62 + texture2D(tNoise, np * .29 + .4).r * .38; float m = smoothstep(1., .05, length(q * vec2(1., 1.05))); float a = m * smoothstep(.2, .75, n) * .22;
       vec3 c = uSunCol * (.17 + .10 * n) + uSky * .46; gl_FragColor = vec4(mix(c, fogged(c, vW), .5) * a, a); }` });
   mm.blending = THREE.CustomBlending; mm.blendSrc = THREE.OneFactor; mm.blendDst = THREE.OneMinusSrcAlphaFactor;
-  for (let i = 0; i < (low ? 5 : 13); i++) { const m = new THREE.Mesh(mg, mm); const f = i / 8; m.position.set(X + 12 - R() * 24, 2 + R() * 8, Z + (R() - 0.5) * 46); m.scale.set(26 + R() * 14, 12 + R() * 12, 1); m.renderOrder = 5; group.add(m); }
-  const lm = new THREE.Mesh(mg, mm); lm.position.set(X + 24, FALL.ledge + 3, Z); lm.scale.set(20, 9, 1); lm.renderOrder = 3; group.add(lm);
+  for (let i = 0; i < (low ? 3 : 5); i++) { const m = new THREE.Mesh(mg, mm); const f = i / 8; m.position.set(X + 18 - R() * 18, 2 + R() * 5, Z + (R() - 0.5) * 40); m.scale.set(26 + R() * 14, 12 + R() * 12, 1); m.renderOrder = 5; group.add(m); }
+  for (const [f, y, z, w, h] of [[74, 60, -30, 120, 26], [78, 62, 50, 120, 26], [150, 92, -40, 190, 34], [156, 96, 70, 190, 34]]) { const m = new THREE.Mesh(mg, mm); m.position.set(X + f, y, Z + z); m.scale.set(w, h, 1); m.renderOrder = 3; group.add(m); }
   // primary and secondary bow, placed by the true 42 and 51 degree angles around the point opposite the sun
   const rb = new THREE.Mesh(mg, new THREE.ShaderMaterial({ uniforms: u, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexShader: mm.vertexShader,
     fragmentShader: GLSL + /* glsl */ `varying vec2 vU; varying vec3 vW;

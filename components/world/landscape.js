@@ -7,11 +7,14 @@ export const center = (z) => 55 * Math.sin(z * 0.0045) + 24 * Math.sin(z * 0.011
 // The volcano beside the caldera: shared by the terrain, its lava and its smoke.
 export const CONE = { z: -1400, r: 205, h: 150 }; CONE.x = center(CONE.z) + 235;
 // Silver Falls: a cliff alcove on the right bank with a plunge pool and an outflow to the river.
-export const FALL = { z: -243, top: 58, ledge: 35 }; FALL.x = center(FALL.z) + 66; // centre of the plunge pool
+export const FALL = { z: -258 }; FALL.x = center(FALL.z) + 66; // centre of the plunge pool
+export const alcove = (s) => 19 * Math.sqrt(Math.max(0, 1 - (s / 46) ** 2));
 export function fallCliff(x, z) { // distance into the rock face, curved into an alcove
-  const t = (z - FALL.z) / 46, alcove = 19 * Math.sqrt(Math.max(0, 1 - t * t));
-  return x - (FALL.x + alcove) + 3.4 * noise(x * 0.07, z * 0.07) + 1.6 * noise(z * 0.21, x * 0.13 + 4) + 5 * Math.max(0, Math.abs(t) - 0.6);
+  const t = (z - FALL.z) / 46;
+  return x - (FALL.x + alcove(z - FALL.z)) + 3.4 * noise(x * 0.07, z * 0.07) + 1.6 * noise(z * 0.21, x * 0.13 + 4) + 5 * Math.max(0, Math.abs(t) - 0.6);
 }
+// Every fall in the basin: s sideways, w half-width, tier (1 the great fall and its neighbours, 2 the middle wall, 3 the far wall)
+export const FALLS = [[-5.5, 7.5, 1, 1], [6, 6.5, 1, 1], [0.5, 4.5, 1, 1], [-33, 1.7, 1, 0.8], [34, 2.2, 1, 0.8], [-24, 0.8, 1, 0.6], [-58, 1.1, 1, 0.6], [-60, 2.2, 2, 0.9], [-32, 4.4, 2, 1], [-4, 2.0, 2, 0.8], [26, 5.2, 2, 1], [55, 2.4, 2, 0.9], [84, 1.4, 2, 0.7], [-84, 1.6, 2, 0.7], [-54, 3.6, 3, 0.9], [10, 5.0, 3, 1], [72, 3.4, 3, 0.9], [-118, 2.2, 3, 0.7]].map(([s, w, tier, dens]) => ({ s, w, tier, dens, lip: 0 }));
 const lakeAt = (z) => bump(-z / STOP_GAP, 3.2, 0.28, 0.3);
 // Blossom Sanctuary: the river widens into a still pond with an islet
 export const pondAt = (z) => bump(-z / STOP_GAP, 0, 0.1, 0.34);
@@ -27,11 +30,11 @@ export function height(x, z) {
   const pond = pondAt(z), fw = 27 + 9 * noise(z * 0.01, 4.2) + lake * 34 + canyon * 24 + pond * 34, dw = d + wob;
   let m = 0;
   if (canyon < 1) {
-    const wx = x + 26 * noise(x * 0.006 + 3, z * 0.006), wz = z + 26 * noise(x * 0.006, z * 0.006 + 7);
+    const wx = x + 30 * noise(x * 0.006 + 3, z * 0.006) + 11 * noise(x * 0.021, z * 0.021 + 5), wz = z + 30 * noise(x * 0.006, z * 0.006 + 7) + 11 * noise(x * 0.021 + 8, z * 0.021);
     let r = 0, a = 0.5, f = 0.0058, w = 1;
     for (let i = 0; i < 7; i++) {
-      let n = 1 - Math.abs(noise(wx * f + i * 17.3, wz * f - i * 9.1)); n *= n * w;
-      w = Math.min(1, Math.max(0, n * 1.7)); r += n * a; a *= 0.5; f *= 2.07;
+      let n = 1.07 - Math.sqrt(noise(wx * f + i * 17.3, wz * f - i * 9.1) ** 2 + 0.012); n *= n * w;
+      w = Math.min(1, Math.max(0, n * 1.7)); r += n * a * (i > 2 ? smooth(520, 190, d) * 0.85 + 0.15 : 1); a *= 0.5; f *= 2.07;
     }
     m = Math.pow(smooth(fw, fw + 215, dw), 1.25) * (22 + (205 - volc * 60) * r * (0.75 + 0.35 * noise(x * 0.0021, z * 0.0021 + 8))) + smooth(160, 560, d) * 70;
   }
@@ -53,15 +56,19 @@ export function height(x, z) {
   const cd = Math.hypot(x - CONE.x, z - CONE.z) * (1 + 0.14 * noise(x * 0.012, z * 0.012));
   if (cd < CONE.r) { const q = 1 - cd / CONE.r, rib = 1 - Math.abs(noise(Math.atan2(z - CONE.z, x - CONE.x) * 4.2, cd * 0.006)); let c = CONE.h * Math.pow(q, 1.35) - (rib * 9 + 5 * noise(x * 0.05, z * 0.05)) * smooth(0, 0.25, q) * smooth(1, 0.7, q) * 1.0; if (cd < 26) c -= 24 * (1 - smooth(8, 26, cd)); m = lerp(m, c + 6, smooth(0, 0.22, q)); }
   const fz = Math.abs(z - FALL.z);
-  if (fz < 135 && o > 24) {
-    const e = fallCliff(x, z), col = noise(z * 0.16, 3) * 1.4 + noise(z * 0.43, x * 0.1) * 0.7 + 7 * noise(z * 0.045, 11) * smooth(16, 40, fz), chan = Math.exp(-Math.pow((z - FALL.z) / 8.5, 2)), side = smooth(0, 30, fz);
-    let c = -1.6 + 3.1 * smooth(14, 30, Math.hypot((x - FALL.x - 3) * 0.9, z - FALL.z));
-    c += (FALL.ledge + 15 * side * noise(z * 0.034, 8) + 4 * side * noise(z * 0.13, 5)) * smooth(0 + col, 6.5 + col, e) + 2.5 * smooth(7, 14, e) * side;
-    c += (FALL.top - FALL.ledge) * smooth(13 + col, 18 + col, e) + (e > 18 ? 16 * smooth(18, 110, e) * side + 4 * noise(x * 0.03, z * 0.03) * side : 0);
-    c += smooth(3, 8, e) * 1.2 * noise(x * 0.23, z * 0.23) - smooth(8, 12, e) * chan * 2.2;
-    const out = Math.exp(-Math.pow((z - FALL.z - 4 * noise(x * 0.06, 2)) / 6.5, 2)) * smooth(4, -6, e); // stream to the river
+  if (fz < 205 && o > 24) {
+    const e = fallCliff(x, z), sd = z - FALL.z, as = Math.abs(sd), col = noise(z * 0.16, 3) * 1.4 + noise(z * 0.43, x * 0.1) * 0.7 + 5 * noise(z * 0.045, 11) * smooth(16, 40, fz), side = smooth(8, 34, fz);
+    let c = -1.6 + 3.1 * smooth(14, 30, Math.hypot((x - FALL.x - 3) * 0.9, sd));
+    if (e > 0) {
+      const up = smooth(20, 70, e); c += (23 + 0.04 * as + 3 * side * noise(z * 0.05, 8) - 1.5 * Math.exp(-((sd / 14) ** 2))) * smooth(11 + col, 27 + col, e); // lower wall
+      c += up * (17 + 0.17 * Math.max(0, as - 14)) + smooth(18, 30, e) * (2.4 * noise(x * 0.075, z * 0.075) + 1.3 * noise(x * 0.21, z * 0.21)) * (0.35 + 0.65 * side); // boulder slope where the streams gather
+      c += (19 + 5 * noise(z * 0.035, 21)) * smooth(76 + col * 1.5, 98 + col * 1.5, e) + 10 * smooth(98, 132, e) + 3 * smooth(76, 90, e) * noise(x * 0.045, z * 0.045); // middle wall and hanging valley
+      c += (20 + 8 * noise(z * 0.021, 31)) * smooth(140, 172, e); // far wall
+      if (e > 128) { let r = 0, a2 = 0.5, f2 = 0.009, w2 = 1; for (let i = 0; i < 6; i++) { let n2 = 1.06 - Math.sqrt(noise(x * f2 + i * 13.1 + 1.3 * noise(z * 0.02, 4), z * f2 - i * 5.3 + 1.3 * noise(x * 0.02, 9)) ** 2 + 0.012); n2 *= n2 * w2; w2 = Math.min(1, n2 * 1.7); r += n2 * a2 * (i > 2 ? 0.45 : 1); a2 *= 0.5; f2 *= 2.07; } c += r * 46 * smooth(150, 300, e); }
+    }
+    const out = Math.exp(-Math.pow((sd - 4 * noise(x * 0.06, 2)) / 6.5, 2)) * smooth(4, -6, e); // stream to the river
     c = lerp(c, -1.4, out);
-    m = lerp(m, c - 2.2 + (c < 6 ? 0 : 0), smooth(135, 88, fz) * smooth(24, 36, o)); 
+    m = lerp(m, c - 2.2, smooth(205, 125, fz) * smooth(24, 36, o));
     if (e < 4 && fz < 88) { m = c - 2.2; }
   }
   const hills = (noise(x * 0.03, z * 0.03) + 0.5 * noise(x * 0.08, z * 0.08)) * 3.2 * bank * (fz < 60 && o > 20 ? smooth(30, 60, fz) : 1) + 0.35 * noise(x * 0.31, z * 0.31);
@@ -70,6 +77,7 @@ export function height(x, z) {
   return y;
 }
 
+for (const f of FALLS) f.lip = [0, 25 + 0.05 * Math.abs(f.s) + 1.5 * noise(f.s * 0.3, 2), 59 + 0.14 * Math.abs(f.s) + 5 * noise(f.s * 0.11, 7), 101 + 0.04 * Math.abs(f.s) + 7 * noise(f.s * 0.07, 3)][f.tier];
 export const BIOME = /* glsl */ `
 float U = -vW.z / ${STOP_GAP.toFixed(1)};
 // borders wander and interlock instead of cutting straight across the valley
@@ -153,20 +161,21 @@ export function groundMaterial(u, { rock = false, far = false } = {}) {
         vec3 soil = mix(sd * vec3(1.25,.86,.62), sd * vec3(1.35,1.1,.85), smoothstep(.35,.65,big)); soil = mix(soil, vec3(.17,.16,.06), smoothstep(.55,.72, grit) * smoothstep(.45,.65, big) * .5);
         gr = mix(gr, mix(vec3(.055,.105,.022), vec3(.17,.21,.06), clamp(big * 1.5 - .35 + grit * .4, 0., 1.)) * (.6 + .8 * gr.g * 2.2), pinkK * .95); gr = mix(gr, soil, canyon); gr = mix(gr, mix(bs * .8, vec3(.085,.078,.08) * (.6 + grit), smoothstep(.4,.65,fine)), volc);
         }
-        vec2 fp = vW.xz - vec2(${FALL.x.toFixed(2)}, ${FALL.z.toFixed(1)}); float nearF = (1. - hiA) * smoothstep(120., 40., length(fp));
+        vec2 fp = vW.xz - vec2(${FALL.x.toFixed(2)}, ${FALL.z.toFixed(1)}); float nearF = (1. - hiA) * smoothstep(190., 120., length(fp));
         if (nearF > .01) {
           vec3 rs = tri(tRock, vW * .055, w) * (.55 + .75 * tri(tRock, vW * .16, w)); rk = mix(rk, pow(rs, vec3(1.35)) * .85, nearF * .75); N = normalize(mix(N, triN(tRockN, vW * .06, w, G, 1.5), nearF * .8)); rk *= mix(vec3(1.), vec3(.60,.58,.54) * (.75 + .5 * tn(vec2(fp.y * .16, vW.y * .05))), nearF); float moss = nearF * smoothstep(1.0, .35, slope + (fine - .5) * 1.1) * smoothstep(.42, .56, fine * .5 + grit * .5 + (tn(vW.xz * 1.9 + vW.y) - .48) * .5);
           rk = mix(rk, vec3(.035,.075,.016) * (.6 + grit * 1.4), moss * .9);
           float wetR = nearF * smoothstep(17., 3., abs(fp.y) + (fine - .5) * 12.) * smoothstep(-4., 12., fp.x); rk *= 1. - .5 * wetR;
-          float cracks = smoothstep(.42,.5, tn(vec2(fp.y * .9, vW.y * .16))) ; rk *= mix(1., .62 + .5 * cracks, nearF * (1. - w.y) * smoothstep(8., 16., fp.x));
+          float cracks = smoothstep(.42,.5, tn(vec2(fp.y * .9, vW.y * .16))) ; rk *= mix(1., .8 + .25 * cracks, nearF * (1. - w.y) * smoothstep(8., 16., fp.x));
         }
+        gr = mix(gr, mix(vec3(.030,.058,.013), vec3(.105,.145,.035), smoothstep(.3,.65,fine * .6 + grit * .4)) * (.55 + 2.4 * gr.g), nearF * .72); rk = rk; { float hillF = (1. - hiA) * smoothstep(230., 150., abs(fp.y) + (big - .5) * 60.) * smoothstep(-20., 20., fp.x) * smoothstep(330., 230., fp.x) * smoothstep(9., 24., vW.y) * smoothstep(140., 105., vW.y); vec3 fl2 = mix(vec3(.020,.032,.012), vec3(.058,.066,.026), smoothstep(.34,.62, fine * .5 + grit * .5)) * (.6 + 2. * gr.g); gr = mix(gr, fl2, hillF * .88); rk = mix(rk, rk * vec3(.74,.78,.74), hillF * .6); }
         vec3 alb = mix(rk, gr, gs);
         // scree at the foot of cliffs
         alb = mix(alb, mix(rk, sd, .4) * (.65 + .7 * grit), smoothstep(.16,.28,slope) * smoothstep(.52,.36,slope) * .55);
         float line = mix(112., 14., snowy) + canyon * 300. + volc * 400. + hiA * 382.;
-        float snow = smoothstep(line - 12., line + 26., vW.y + (fine - .5) * 46. + big * 18.) * smoothstep(.52, .30, slope + (grit - .5) * .2);
+        float snow = smoothstep(line - 12., line + 26., vW.y + (fine - .5) * 46. + big * 18.) * smoothstep(.46, .26, slope + (grit - .5) * .22 + (fine - .5) * .25);
         snow = max(snow, snowy * smoothstep(.42, .2, slope + (grit - .5) * .25) * smoothstep(.8, 3.2, vW.y));
-        alb = mix(alb, vec3(.62,.67,.75) * (.93 + .12 * grit), snow); N = normalize(mix(N, G, snow * .75));
+        alb = mix(alb, mix(vec3(.46,.51,.60), vec3(.62,.67,.75), max(snowy, hiA)) * (.93 + .12 * grit), snow); N = normalize(mix(N, G, snow * .75));
         if (pinkK > .01) { vec2 pq = vW.xz * 5.5; vec2 pc = floor(pq); float ph = hash2(pc); vec2 pf = fract(pq) - .5 - (vec2(hash2(pc + 3.), hash2(pc + 7.)) - .5) * .5; float ca = cos(ph * 40.), sa = sin(ph * 40.); pf = mat2(ca, -sa, sa, ca) * pf; float pet = step(.28 + .4 * fine, ph) * smoothstep(.26, .20, length(pf * vec2(1., 1.7))); alb = mix(alb, mix(vec3(.82,.28,.45), vec3(.97,.70,.79), hash2(pc + 11.)), pet * pinkK * smoothstep(26., 10., dist) * smoothstep(.6,.2,slope)); alb = mix(alb, vec3(.74,.36,.46), pinkK * smoothstep(8., 30., dist) * smoothstep(.42, .66, big * .5 + fine * .35 + grit * .25) * .34 * smoothstep(.5,.2,slope)); }
         float shore = smoothstep(2.3, .4, vW.y + (grit - .5) * 1.6 + (fine - .5) * 2.); alb = mix(alb, mix(sd * .75, rk * 1.1, smoothstep(.4, .6, grit)), shore * .72 * (1. - volc)); alb *= 1. - .45 * smoothstep(1., .0, vW.y) * (1. - hiA);
         float ao = clamp(vAo, .25, 1.1) * mix(1., .62 + .7 * grit, nk * (1. - snow * .8));
@@ -210,11 +219,11 @@ export function groundMaterial(u, { rock = false, far = false } = {}) {
   });
 }
 
-const PATCH = { x0: 12, x1: 122, z0: -72, z1: 72 }; // around the pool centre
+const PATCH = { x0: 12, x1: 162, z0: -104, z1: 104 }; // around the pool centre
 const patchSink = (x, z) => { const a = x - FALL.x + 40, b = z - FALL.z; return 7 * smooth(PATCH.x0 + 6, PATCH.x0 + 18, a) * smooth(PATCH.x1 - 6, PATCH.x1 - 20, a) * smooth(PATCH.z0 + 6, PATCH.z0 + 18, b) * smooth(PATCH.z1 - 6, PATCH.z1 - 18, b); };
 // Fine mesh over the falls, where the main grid is too coarse for a believable cliff.
 function cliffPatch(mat, low) {
-  const st = low ? 1.3 : 0.75, nx = Math.round((PATCH.x1 - PATCH.x0) / st), nz = Math.round((PATCH.z1 - PATCH.z0) / st), W = nx + 1, pos = new Float32Array(W * (nz + 1) * 3), ao = new Float32Array(W * (nz + 1)), idx = [];
+  const st = low ? 1.8 : 1.05, nx = Math.round((PATCH.x1 - PATCH.x0) / st), nz = Math.round((PATCH.z1 - PATCH.z0) / st), W = nx + 1, pos = new Float32Array(W * (nz + 1) * 3), ao = new Float32Array(W * (nz + 1)), idx = [];
   for (let j = 0; j <= nz; j++) for (let i = 0; i < W; i++) { const x = FALL.x - 40 + PATCH.x0 + i * st, z = FALL.z + PATCH.z0 + j * st; let y = height(x, z); const e = fallCliff(x, z);
     const edge = Math.min(i, nx - i, j, nz - j) < 2 ? -1.5 : 0, inCliff = smooth(-2, 2, e) * smooth(26, 18, e);
     const px = x - inCliff * (1.1 * noise(y * 0.35, z * 0.22) + 0.6 * noise(y * 0.9, z * 0.6) + 0.5 * Math.sin(y * 0.75 + 2 * noise(z * 0.06, 3)));
@@ -290,7 +299,7 @@ export function createWater(u) {
           float broad = (1. - .6 * pinkK) * pow(max(dot(normalize(R * vec3(1., .55, 1.)), normalize(uSunDir * vec3(1., .55, 1.))), 0.), 70.); col += uSunCol * broad * .75 * smoothstep(.55, .95, h) * sh * vSunW * (1. - hit * .7) * (1. - volc); }
         col += phxLight(vW, N) * (.10 + .5 * pow(max(dot(R, normalize(uPhx - vW)), 0.), 24.));
         float foam = exp(-dist * .022) * smoothstep(.45, .05, depth) * smoothstep(.42,.62, n2(vW.xz * 1.3 + vec2(uTime * .3, -uTime * .6))) * (1. - bump(U, 3.2, .4, .3) * .7);
-        { vec2 ip = vW.xz - vec2(${(FALL.x + 15).toFixed(2)}, ${FALL.z.toFixed(1)}); float id = length(ip * vec2(1., .8));
+        { vec2 ip = vW.xz - vec2(${(FALL.x + 15).toFixed(2)}, ${FALL.z.toFixed(1)}); float id = length(ip * vec2(1., .72));
           if (id < 34.) { float ring = fbm2(vec2(id * .55 - uTime * 1.5, atan(ip.y, ip.x) * 3.)); float churn = fbm2(ip * .5 + vec2(uTime * .9, -uTime * .6)); float fm = smoothstep(22., 3., id + (churn - .5) * 13.) + smoothstep(.55,.75, ring) * smoothstep(34., 8., id) * .5; foam = max(foam, clamp(fm, 0., 1.) * 1.5); } }
         col = mix(col, (uSky * .5 + uSunCol * .25) * .8, min(foam * .55, .9));
         if (pinkK > .01) { vec2 pq = (vW.xz + vec2(sin(vW.z * .15 + uTime * .1), uTime * .12)) * 3.2; vec2 pc = floor(pq); float ph = hash2(pc); vec2 pf = fract(pq) - .5 - (vec2(hash2(pc + 3.), hash2(pc + 7.)) - .5) * .5; float ca = cos(ph * 40.), sa = sin(ph * 40.); pf = mat2(ca, -sa, sa, ca) * pf; float pet = step(1. - .60 * smoothstep(.36,.62, fbm2(vW.xz * .13 + 3.)), ph) * smoothstep(.26, .18, length(pf * vec2(1., 1.6))); col = mix(col, mix(vec3(.86,.30,.48), vec3(.98,.70,.79), fract(ph * 17.)) * (uSunCol * .3 * sh + uSky * .55), pet * pinkK * smoothstep(70., 20., dist)); }
