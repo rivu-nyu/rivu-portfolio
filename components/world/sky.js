@@ -41,7 +41,7 @@ export function createMist(u, low) {
       float d = length(cameraPosition - vW); a *= smoothstep(45., 130., d) * .16 * (1. - bump(U, 2.12, .55, .3) * .75);
       gl_FragColor = vec4(mix(uFog, uHorizon, .5) + uSunCol * .05, a); }` });
   const n = low ? 18 : 40;
-  for (let i = 0; i < n; i++) { const z = 500 - i * (3100 / n), m = new THREE.Mesh(geo, mat); m.position.set(center(z) + (R() - 0.5) * 90, 9 + R() * 14, z); m.scale.set(130 + R() * 110, 20 + R() * 22, 1); m.renderOrder = 2; g.add(m); }
+  for (let i = 0; i < n; i++) { const z = 800 - i * (3400 / n), m = new THREE.Mesh(geo, mat); m.position.set(center(z) + (R() - 0.5) * 90, 9 + R() * 14, z); m.scale.set(130 + R() * 110, 20 + R() * 22, 1); m.renderOrder = 2; g.add(m); }
   return g;
 }
 

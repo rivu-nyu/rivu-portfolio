@@ -1,11 +1,17 @@
 import * as THREE from 'three';
 import { GLSL, SHADOW, HMAP, noise, smooth, bump, rng, lerp } from './common';
-import { STOP_GAP, STOPS } from './stops';
+import { STOP_GAP, STOPS, FIRST, zOf } from './stops';
 
-const Z0 = 720, Z1 = -2980;
+const Z0 = 1020, Z1 = -2980;
 export const center = (z) => 55 * Math.sin(z * 0.0045) + 24 * Math.sin(z * 0.011 + 1.3);
 // The volcano beside the caldera: shared by the terrain, its lava and its smoke.
 export const CONE = { z: -1400, r: 205, h: 150 }; CONE.x = center(CONE.z) + 235;
+// Silver Falls: a cliff alcove on the right bank with a plunge pool and an outflow to the river.
+export const FALL = { z: -243, top: 58, ledge: 35 }; FALL.x = center(FALL.z) + 66; // centre of the plunge pool
+export function fallCliff(x, z) { // distance into the rock face, curved into an alcove
+  const t = (z - FALL.z) / 46, alcove = 19 * Math.sqrt(Math.max(0, 1 - t * t));
+  return x - (FALL.x + alcove) + 3.4 * noise(x * 0.07, z * 0.07) + 1.6 * noise(z * 0.21, x * 0.13 + 4) + 5 * Math.max(0, Math.abs(t) - 0.6);
+}
 const lakeAt = (z) => bump(-z / STOP_GAP, 3.2, 0.28, 0.3);
 export const riverWidth = (z) => 7 + 3 * noise(z * 0.02, 1) + lakeAt(z) * 40;
 
@@ -43,8 +49,22 @@ export function height(x, z) {
   }
   const cd = Math.hypot(x - CONE.x, z - CONE.z) * (1 + 0.14 * noise(x * 0.012, z * 0.012));
   if (cd < CONE.r) { const q = 1 - cd / CONE.r, rib = 1 - Math.abs(noise(Math.atan2(z - CONE.z, x - CONE.x) * 4.2, cd * 0.006)); let c = CONE.h * Math.pow(q, 1.35) - (rib * 9 + 5 * noise(x * 0.05, z * 0.05)) * smooth(0, 0.25, q) * smooth(1, 0.7, q) * 1.0; if (cd < 26) c -= 24 * (1 - smooth(8, 26, cd)); m = lerp(m, c + 6, smooth(0, 0.22, q)); }
-  const hills = (noise(x * 0.03, z * 0.03) + 0.5 * noise(x * 0.08, z * 0.08)) * 3.2 * bank + 0.35 * noise(x * 0.31, z * 0.31);
-  return 2.2 + hills + m - 7 * (1 - smooth(rw - 3, rw + 12, d + 2.5 * noise(x * 0.07, z * 0.07)));
+  const fz = Math.abs(z - FALL.z);
+  if (fz < 135 && o > 24) {
+    const e = fallCliff(x, z), col = noise(z * 0.16, 3) * 1.4 + noise(z * 0.43, x * 0.1) * 0.7 + 7 * noise(z * 0.045, 11) * smooth(16, 40, fz), chan = Math.exp(-Math.pow((z - FALL.z) / 8.5, 2)), side = smooth(0, 30, fz);
+    let c = -1.6 + 3.1 * smooth(14, 30, Math.hypot((x - FALL.x - 3) * 0.9, z - FALL.z));
+    c += (FALL.ledge + 15 * side * noise(z * 0.034, 8) + 4 * side * noise(z * 0.13, 5)) * smooth(0 + col, 6.5 + col, e) + 2.5 * smooth(7, 14, e) * side;
+    c += (FALL.top - FALL.ledge) * smooth(13 + col, 18 + col, e) + (e > 18 ? 16 * smooth(18, 110, e) * side + 4 * noise(x * 0.03, z * 0.03) * side : 0);
+    c += smooth(3, 8, e) * 1.2 * noise(x * 0.23, z * 0.23) - smooth(8, 12, e) * chan * 2.2;
+    const out = Math.exp(-Math.pow((z - FALL.z - 4 * noise(x * 0.06, 2)) / 6.5, 2)) * smooth(4, -6, e); // stream to the river
+    c = lerp(c, -1.4, out);
+    m = lerp(m, c - 2.2 + (c < 6 ? 0 : 0), smooth(135, 88, fz) * smooth(24, 36, o)); 
+    if (e < 4 && fz < 88) { m = c - 2.2; }
+  }
+  const hills = (noise(x * 0.03, z * 0.03) + 0.5 * noise(x * 0.08, z * 0.08)) * 3.2 * bank * (fz < 60 && o > 20 ? smooth(30, 60, fz) : 1) + 0.35 * noise(x * 0.31, z * 0.31);
+  let y = 2.2 + hills + m - 7 * (1 - smooth(rw - 3, rw + 12, d + 2.5 * noise(x * 0.07, z * 0.07)));
+  if (fz < 30 && o > 4 && o < 110) { const e = fallCliff(x, z), path = z - FALL.z - 4.5 * noise(x * 0.05, 2); y = Math.min(y, lerp(y, -1.3, smooth(17, 7, Math.abs(path)) * smooth(2, -5, e))); }
+  return y;
 }
 
 const BIOME = /* glsl */ `
@@ -113,6 +133,13 @@ function groundMaterial(u, { rock = false } = {}) {
         vec3 soil = mix(sd * vec3(1.25,.86,.62), sd * vec3(1.35,1.1,.85), smoothstep(.35,.65,big)); soil = mix(soil, vec3(.17,.16,.06), smoothstep(.55,.72, grit) * smoothstep(.45,.65, big) * .5);
         gr = mix(gr, soil, canyon); gr = mix(gr, mix(bs * .8, vec3(.085,.078,.08) * (.6 + grit), smoothstep(.4,.65,fine)), volc);
         }
+        vec2 fp = vW.xz - vec2(${FALL.x.toFixed(2)}, ${FALL.z.toFixed(1)}); float nearF = smoothstep(120., 40., length(fp));
+        if (nearF > .01) {
+          vec3 rs = tri(tRock, vW * .055, w) * (.55 + .75 * tri(tRock, vW * .16, w)); rk = mix(rk, pow(rs, vec3(1.35)) * .85, nearF * .75); N = normalize(mix(N, triN(tRockN, vW * .06, w, G, 1.5), nearF * .8)); rk *= mix(vec3(1.), vec3(.60,.58,.54) * (.75 + .5 * tn(vec2(fp.y * .16, vW.y * .05))), nearF); float moss = nearF * smoothstep(1.0, .35, slope + (fine - .5) * 1.1) * smoothstep(.42, .56, fine * .5 + grit * .5 + (tn(vW.xz * 1.9 + vW.y) - .48) * .5);
+          rk = mix(rk, vec3(.035,.075,.016) * (.6 + grit * 1.4), moss * .9);
+          float wetR = nearF * smoothstep(17., 3., abs(fp.y) + (fine - .5) * 12.) * smoothstep(-4., 12., fp.x); rk *= 1. - .5 * wetR;
+          float cracks = smoothstep(.42,.5, tn(vec2(fp.y * .9, vW.y * .16))) ; rk *= mix(1., .62 + .5 * cracks, nearF * (1. - w.y) * smoothstep(8., 16., fp.x));
+        }
         vec3 alb = mix(rk, gr, gs);
         // scree at the foot of cliffs
         alb = mix(alb, mix(rk, sd, .4) * (.65 + .7 * grit), smoothstep(.16,.28,slope) * smoothstep(.52,.36,slope) * .55);
@@ -122,7 +149,7 @@ function groundMaterial(u, { rock = false } = {}) {
         alb = mix(alb, vec3(.62,.67,.75) * (.93 + .12 * grit), snow); N = normalize(mix(N, G, snow * .75));
         float shore = smoothstep(2.6, .4, vW.y + (grit - .5)); alb = mix(alb, sd * .55, shore * .7 * (1. - volc)); alb *= 1. - .45 * smoothstep(1., .0, vW.y);
         float ao = clamp(vAo, .25, 1.1) * mix(1., .62 + .7 * grit, nk * (1. - snow * .8));
-        float sh = vSun * castShadow(vW, G);
+        float sh = vSun * castShadow(vW, G); if (nearF > .01) sh *= mix(1., .42 + .58 * smoothstep(.40, .56, tn(vW.xz * .035 + vec2(uTime * .09, uTime * .05)) + .22 * smoothstep(34., 8., abs(fp.y))), nearF);
         float nl = max(dot(N, uSunDir), 0.) * smoothstep(-.05, .15, dot(G, uSunDir));
         vec3 sky = mix(uGround, uSky, N.y * .5 + .5);
         vec3 col = alb * (uSunCol * nl * sh * 1.12 + sky * .74 * ao);
@@ -155,6 +182,20 @@ function groundMaterial(u, { rock = false } = {}) {
   });
 }
 
+const PATCH = { x0: 12, x1: 122, z0: -72, z1: 72 }; // around the pool centre
+const patchSink = (x, z) => { const a = x - FALL.x + 40, b = z - FALL.z; return 7 * smooth(PATCH.x0 + 6, PATCH.x0 + 18, a) * smooth(PATCH.x1 - 6, PATCH.x1 - 20, a) * smooth(PATCH.z0 + 6, PATCH.z0 + 18, b) * smooth(PATCH.z1 - 6, PATCH.z1 - 18, b); };
+// Fine mesh over the falls, where the main grid is too coarse for a believable cliff.
+function cliffPatch(mat, low) {
+  const st = low ? 1.3 : 0.75, nx = Math.round((PATCH.x1 - PATCH.x0) / st), nz = Math.round((PATCH.z1 - PATCH.z0) / st), W = nx + 1, pos = new Float32Array(W * (nz + 1) * 3), ao = new Float32Array(W * (nz + 1)), idx = [];
+  for (let j = 0; j <= nz; j++) for (let i = 0; i < W; i++) { const x = FALL.x - 40 + PATCH.x0 + i * st, z = FALL.z + PATCH.z0 + j * st; let y = height(x, z); const e = fallCliff(x, z);
+    const edge = Math.min(i, nx - i, j, nz - j) < 2 ? -1.5 : 0, inCliff = smooth(-2, 2, e) * smooth(26, 18, e);
+    const px = x - inCliff * (1.1 * noise(y * 0.35, z * 0.22) + 0.6 * noise(y * 0.9, z * 0.6) + 0.5 * Math.sin(y * 0.75 + 2 * noise(z * 0.06, 3)));
+    pos.set([px, y + edge + inCliff * 0.5 * noise(x * 0.8, z * 0.8), z], (j * W + i) * 3);
+    if (j < nz && i < nx) { const v = j * W + i; idx.push(v, v + W, v + 1, v + 1, v + W, v + W + 1); } }
+  for (let j = 0; j <= nz; j++) for (let i = 0; i < W; i++) { const k = j * W + i, g = (a, b) => pos[(Math.min(nz, Math.max(0, b)) * W + Math.min(nx, Math.max(0, a))) * 3 + 1]; const q = (g(i - 4, j) + g(i + 4, j) + g(i, j - 4) + g(i, j + 4)) / 4; ao[k] = 1 - Math.max(-0.1, Math.min(0.6, (q - pos[k * 3 + 1]) * 0.05)); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aAo', new THREE.BufferAttribute(ao, 1)); g.setIndex(idx); g.computeVertexNormals(); return new THREE.Mesh(g, mat);
+}
+
 export function createTerrain(u, low) {
   const step = low ? 6 : 4.2, cols = low ? 150 : 220, chunks = 12;
   const rowsTotal = Math.ceil((Z0 - Z1) / step / chunks) * chunks, dz = (Z0 - Z1) / rowsTotal, per = rowsTotal / chunks;
@@ -170,7 +211,7 @@ export function createTerrain(u, low) {
     const n = W * (per + 1), pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), ao = new Float32Array(n), idx = [];
     for (let j = 0; j <= per; j++) for (let i = 0; i < W; i++) {
       const J = c * per + j, k = at(i, J), o = j * W + i;
-      pos.set([P[k], P[k + 1], P[k + 2]], o * 3);
+      pos.set([P[k], P[k + 1] - patchSink(P[k], P[k + 2]), P[k + 2]], o * 3);
       const l = at(i - 1, J), r = at(i + 1, J), d = at(i, J - 1), e = at(i, J + 1);
       a.set(P[r] - P[l], P[r + 1] - P[l + 1], P[r + 2] - P[l + 2]); b.set(P[e] - P[d], P[e + 1] - P[d + 1], P[e + 2] - P[d + 2]);
       a.cross(b).normalize(); if (a.y < 0) a.negate(); nor.set([a.x, a.y, a.z], o * 3);
@@ -183,6 +224,7 @@ export function createTerrain(u, low) {
     geo.setAttribute('aAo', new THREE.BufferAttribute(ao, 1)); geo.setIndex(idx);
     group.add(new THREE.Mesh(geo, mat));
   }
+  group.add(cliffPatch(mat, low));
   return group;
 }
 
@@ -220,7 +262,9 @@ export function createWater(u) {
           float broad = pow(max(dot(normalize(R * vec3(1., .55, 1.)), normalize(uSunDir * vec3(1., .55, 1.))), 0.), 70.); col += uSunCol * broad * .75 * smoothstep(.55, .95, h) * sh * vSunW * (1. - hit * .7) * (1. - volc); }
         col += phxLight(vW, N) * (.10 + .5 * pow(max(dot(R, normalize(uPhx - vW)), 0.), 24.));
         float foam = exp(-dist * .022) * smoothstep(.45, .05, depth) * smoothstep(.42,.62, n2(vW.xz * 1.3 + vec2(uTime * .3, -uTime * .6))) * (1. - bump(U, 3.2, .4, .3) * .7);
-        col = mix(col, (uSky * .5 + uSunCol * .25) * .8, foam * .55);
+        { vec2 ip = vW.xz - vec2(${(FALL.x + 15).toFixed(2)}, ${FALL.z.toFixed(1)}); float id = length(ip * vec2(1., .8));
+          if (id < 34.) { float ring = fbm2(vec2(id * .55 - uTime * 1.5, atan(ip.y, ip.x) * 3.)); float churn = fbm2(ip * .5 + vec2(uTime * .9, -uTime * .6)); float fm = smoothstep(22., 3., id + (churn - .5) * 13.) + smoothstep(.55,.75, ring) * smoothstep(34., 8., id) * .5; foam = max(foam, clamp(fm, 0., 1.) * 1.5); } }
+        col = mix(col, (uSky * .5 + uSunCol * .25) * .8, min(foam * .55, .9));
         if (volc > .01) {
           vec2 lp = vW.xz * .085 + vec2(0., uTime * .16); vec2 wq = vec2(fbm2(lp * .8 + 3.), fbm2(lp * .8 + 8. - uTime * .02)); vec2 q = lp + wq * 1.8;
           float plates = fbm2(q), seams = 1. - abs(fbm2(q * 2.1 + wq) * 2. - 1.), heat = smoothstep(.60, .30, plates) * .85 + pow(seams, 7.) * .75; heat *= mix(.5, 1., smoothstep(-.2, 1.6, depth)); heat = clamp(heat + smoothstep(.5,.0,depth) * .25, 0., 1.4);
@@ -234,8 +278,8 @@ export function createWater(u) {
 
 // ---------- perches: one standing rock every few metres of flight path, on the camera's side of the water
 export function createPerches() {
-  const out = [], camSide = (z) => { const p = Math.min(STOPS.length - 1.001, Math.max(0, -z / STOP_GAP)), i = Math.floor(p), f = smooth(0, 1, p - i); return Math.sin(lerp(STOPS[i].az, STOPS[i + 1].az, f) * Math.PI / 180) >= 0 ? 1 : -1; };
-  for (let z = -170; z > -2180; z -= 26) {
+  const out = [], camSide = (z) => { const p = Math.min(STOPS.length - 1.001, Math.max(0, FIRST - z / STOP_GAP)), i = Math.floor(p), f = smooth(0, 1, p - i); return Math.sin(lerp(STOPS[i].az, STOPS[i + 1].az, f) * Math.PI / 180) >= 0 ? 1 : -1; };
+  for (let z = 142; z > -2180; z -= 26) {
     const side = camSide(z), c = center(z); let d = riverWidth(z) + 3; while (height(c + side * d, z) < 2.3 && d < 120) d += 1;
     d += 2; const x = c + side * d, g = height(x, z), top = g + 5 + 1.6 * Math.abs(noise(z * 0.7, 2));
     out.push({ x, z, ground: g, y: top });
@@ -265,10 +309,11 @@ export function createRocks(u, low, perches) {
   perches.forEach((k, i) => sp.setMatrixAt(i, M.compose(p.set(k.x, k.y, k.z), q.setFromEuler(e.set(0, i * 2.4, 0)), s.set(1, 1, 1)))); sp.computeBoundingSphere(); g.add(sp);
   const geos = [rockGeometry(2, 1, 0.75), rockGeometry(2, 8, 0.9), rockGeometry(2, 23, 0.6)], lists = geos.map(() => []);
   const n = low ? 900 : 2600;
-  for (let i = 0; i < n; i++) { const z = 560 - R() * 3250, side = R() < 0.5 ? -1 : 1, rw = riverWidth(z), near = R() < 0.4, d = near ? rw - 1 + R() * 9 : rw + R() * R() * 110, x = center(z) + side * d, y = height(x, z);
+  for (let i = 0; i < n; i++) { const z = 860 - R() * 3550, side = R() < 0.5 ? -1 : 1, rw = riverWidth(z), near = R() < 0.4, d = near ? rw - 1 + R() * 9 : rw + R() * R() * 110, x = center(z) + side * d, y = height(x, z);
     if (y < -0.6 || y > 60) continue; const sc = near ? 0.25 + R() * R() * 1.5 : 0.35 + Math.pow(R(), 4) * 4.2;
     if (perches.some((k) => Math.abs(k.z - z) < 7 && Math.abs(k.x - x) < 7)) continue;
     lists[i % 3].push(M.clone().compose(p.set(x, y - sc * 0.12, z), q.setFromEuler(e.set(R() * 0.5, R() * 6.28, R() * 0.5)), s.set(sc, sc * (0.7 + R() * 0.4), sc * (0.8 + R() * 0.5)))); }
+  for (let i = 0; i < 34; i++) { const t = i / 34, z = FALL.z + (R() - 0.5) * 52, inner = i < 15; let x = FALL.x - 22 + R() * 30; if (inner) { for (x = FALL.x - 4; x < FALL.x + 40 && fallCliff(x, z) < -2.5 - R() * 3; x += 0.5); } else if (Math.abs(z - FALL.z) < 9) continue; const y = height(x, z), sc = inner ? 0.8 + R() * 1.9 : 0.5 + R() * R() * 2.2; lists[i % 3].push(M.clone().compose(p.set(x, y + sc * 0.2, z), q.setFromEuler(e.set(R() * 0.6, R() * 6.28, R() * 0.6)), s.set(sc, sc * 0.85, sc * 1.1))); }
   lists.forEach((l, i) => { l.sort((a, b) => b.elements[14] - a.elements[14]); const C = 8, sz = Math.ceil(l.length / C);
     for (let c = 0; c < C; c++) { const part = l.slice(c * sz, (c + 1) * sz); if (!part.length) continue; const m = new THREE.InstancedMesh(geos[i], mat, part.length); part.forEach((x, k) => m.setMatrixAt(k, x)); m.computeBoundingSphere(); g.add(m); } });
   return g;
@@ -325,11 +370,11 @@ export function createTrees(u, low, perches) {
         gl_FragColor = vec4(fogged(col, vW), COV); }` });
   mat.alphaToCoverage = true;
   const depth = new THREE.ShaderMaterial({ uniforms: u, side: THREE.DoubleSide, defines: { DEPTHPASS: 1 }, vertexShader: TREE_VS, fragmentShader: GLSL + `varying vec3 vW; varying vec2 vU; varying float vR; void main(){ ${NEEDLE} gl_FragColor = vec4(1.); }` });
-  const max = low ? 2400 : 8200, M = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), list = [];
+  const max = low ? 2600 : 8900, M = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), list = [];
   for (let t = 0; t < max * 14 && list.length < max; t++) {
-    const z = 600 - R() * 3300, U = -z / STOP_GAP, x = center(z) + (R() < 0.5 ? -1 : 1) * (12 + R() * R() * 200), y = height(x, z);
+    const z = 900 - R() * 3600, U = -z / STOP_GAP, x = center(z) + (R() < 0.5 ? -1 : 1) * (12 + R() * R() * 200), y = height(x, z);
     const dens = 1 - bump(U, 2.12, 0.6, 0.3) * 0.97 - bump(U, 5.5, 0.75, 0.35);
-    if (y < 2.6 || y > 92 || Math.hypot(x - CONE.x, z - CONE.z) < 170 || R() > dens || noise(x * 0.018, z * 0.018) + 0.28 < R() * 0.7) continue;
+    if (y < 2.6 || y > 92 || Math.hypot(x - CONE.x, z - CONE.z) < 170 || (Math.abs(z - FALL.z) < 34 && x > FALL.x - 48 && fallCliff(x, z) < 24) || (z - FALL.z > -100 && z - FALL.z < 34 && x > center(z) - 4 && x < FALL.x - 4) || R() > dens || noise(x * 0.018, z * 0.018) + 0.28 < R() * 0.7) continue;
     if (Math.hypot(height(x + 2, z) - y, height(x, z + 2) - y) > 2) continue;
     if (perches.some((k) => Math.abs(k.z - z) < 17 && Math.hypot(k.x - x, k.z - z) < 15)) continue;
     const h = 6 + R() * R() * 11; list.push(M.clone().compose(p.set(x, y - 0.2, z), q.setFromAxisAngle(Y, R() * 6.28), s.set(h * (0.75 + R() * 0.45), h, h * (0.75 + R() * 0.45))));
@@ -356,11 +401,11 @@ export function createGrass(u, low) {
         float patchy = smoothstep(.3, .6, fbm2(c * .09) + aO.w * .18 - .06);
         float edge = smoothstep(${(size / 2).toFixed(1)}, ${(size * 0.34).toFixed(1)}, length(c - f));
         float k = patchy * edge * smoothstep(1.4, 2.3, vW.y) * smoothstep(.75, .4, sl) * (1. - volc) * (1. - snowy * .85) * mix(1., step(.72, aO.w), canyon);
-        float s = k * (.35 + .55 * aO.w) * mix(1., .8, canyon); float ca = cos(aO.z), sa = sin(aO.z); vec3 p = position; p.xz = mat2(ca, -sa, sa, ca) * p.xz;
+        float s = k * (.35 + .55 * aO.w) * mix(1., .8, canyon); float ca = cos(aO.z), sa = sin(aO.z); vec3 p = position; p.xz = mat2(ca, -sa, sa, ca) * p.xz; if (aO.w > .93 && p.y > .9) p.xz *= 1.9;
         p.xz += vec2(.22, .1) * p.y * p.y * (sin(uTime * 2.2 + c.x * .4 + c.y * .3) + .4); vW += p * vec3(s * 1.2, s, s * 1.2); vY = position.y; vR = aO.w; vSun = sunVis(vec3(c.x, vW.y + .5, c.y), uSunDir);
         gl_Position = k < .05 ? vec4(2.,2.,2.,1.) : projectionMatrix * viewMatrix * vec4(vW, 1.); }`,
     fragmentShader: GLSL + SHADOW + /* glsl */ `varying vec3 vW; varying float vY, vR, vSun; void main(){ ${BIOME}
-      vec3 alb = mix(mix(vec3(.03,.05,.012), vec3(.17,.19,.05), vY), vec3(.34,.29,.12), vR * vR * .6); alb = mix(alb, mix(vec3(.16,.10,.045), vec3(.48,.36,.17), vY), canyon); alb = mix(alb, vec3(.5,.5,.48), snowy * .5);
+      vec3 alb = mix(mix(vec3(.03,.05,.012), vec3(.17,.19,.05), vY), vec3(.34,.29,.12), vR * vR * .6); alb = mix(alb, mix(vec3(.16,.10,.045), vec3(.48,.36,.17), vY), canyon); alb = mix(alb, vec3(.5,.5,.48), snowy * .5); float fl = step(.93, vR) * step(.72, vY) * (1. - canyon) * (1. - snowy); float hue = fract(vR * 97.); alb = mix(alb, hue < .4 ? vec3(.78,.74,.66) : hue < .75 ? vec3(.80,.52,.06) : vec3(.55,.16,.34), fl);
       vec3 V = normalize(cameraPosition - vW); float sh = vSun * castShadow(vW, vec3(0.,1.,0.));
       vec3 col = alb * (uSunCol * sh * (max(uSunDir.y, 0.) * .6 + .25 + .7 * pow(max(dot(-V, uSunDir), 0.), 3.)) + mix(uGround, uSky, .85) * .55 * (.4 + .6 * vY) + phxLight(vW, vec3(0.,1.,0.)));
       gl_FragColor = vec4(fogged(col, vW), 1.); }` }));

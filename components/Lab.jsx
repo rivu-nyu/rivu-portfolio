@@ -6,7 +6,7 @@ const words = ['The', 'robot', 'moves', 'toward', 'the', 'object'];
 export default function Lab() {
   const [params, setParams] = useState(7), [bits, setBits] = useState(4), [token, setToken] = useState(2);
   return (
-    <div className="labgrid">
+    <>
       <article className="panel">
         <h3>Less memory, more possibility</h3>
         <p>Explore theoretical weight memory at different numerical precisions.</p>
@@ -26,6 +26,6 @@ export default function Lab() {
         </div>
         <p className="muted">Synthetic visualization for education, not measured model attention.</p>
       </article>
-    </div>
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { lerp, smooth, noise } from './common';
-import { STOP_GAP } from './stops';
+import { STOPS, zOf } from './stops';
 import { center } from './landscape';
 
 export const heading = (z) => Math.atan2((center(z - 12) - center(z + 12)) * 0.9, -24); // yaw of +Z when flying onward
@@ -24,10 +24,10 @@ let travel = 0;
   out.play = (n) => { out.act = last = n; actT = 0; };
 
   out.step = (dt, time, { P, targetP, alt, hover, scrolling, camYaw, faceSign }) => {
-    const delta = targetP - P, z = -P * STOP_GAP, S0 = out.state;
+    const delta = targetP - P, z = zOf(P), S0 = out.state;
     if (Math.abs(delta) > 0.006) dir = Math.sign(delta); 
     idle = scrolling || Math.abs(delta) > 0.004 ? 0 : idle + dt;
-    const landable = P > 0.62 && (P < 5.5 || P > 6.62), soaring = P < 0.4 && idle > 0.6;
+    const landable = P > 0.62 && (P < 6.5 || P > 7.62), soaring = P < 0.4 && idle > 0.6;
     if ((hover > 0.5 || soaring) && idle > 0.5) dir = 1;
 
     // half-turn when travel direction flips; instant while standing, the take-off covers it
@@ -48,7 +48,7 @@ let travel = 0;
     if (S0 === 'fly') {
       pos.copy(F);
       if (landable && idle > 0.75 && arc < 0.02 && hover < 0.05) {
-        let best = null, bd = 34; for (const p of perches) { const d = Math.abs(p.z - (z - dir * 9)); if (d < bd) { bd = d; best = p; } }
+        let best = null, bd = 34; for (const p of perches) { const d = Math.abs(p.z - (z - dir * (STOPS[Math.round(P)]?.hold ? 1 : 9))); if (d < bd) { bd = d; best = p; } }
         if (best) { out.perch = best; perchAt.set(best.x, best.y + 1.36, best.z); p0.copy(pos); const dist = p0.distanceTo(perchAt); T = Math.min(4, Math.max(2.3, dist / 9));
           m0.set(Math.sin(out.yaw), 0, Math.cos(out.yaw)).multiplyScalar(dist * 1.1); m1.copy(perchAt).sub(p0).setY(0).multiplyScalar(0.5); m1.y = -1.5; perchYaw = camYaw + faceSign * 0.85; out.state = 'land'; t = 0; }
       }

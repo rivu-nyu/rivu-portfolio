@@ -81,10 +81,10 @@ export const HMAP = /* glsl */ `
 uniform sampler2D uHMap;
 float vcenter(float z){ return 55. * sin(z * .0045) + 24. * sin(z * .011 + 1.3); }
 float hAt(vec2 xz){ float o = xz.x - vcenter(xz.y); float s = (-90. + sqrt(8100. + 2240. * abs(o))) / 1120.;
-  return texture2D(uHMap, vec2(sign(o) * s * .5 + .5, (720. - xz.y) / 3700.)).r; }
+  return texture2D(uHMap, vec2(sign(o) * s * .5 + .5, (1020. - xz.y) / 4000.)).r; }
 uniform sampler2D uSunMap;
 float sunVis(vec3 p, vec3 sun){ float o = p.x - vcenter(p.z); float s = (-90. + sqrt(8100. + 2240. * abs(o))) / 1120.;
-  return texture2D(uSunMap, vec2(sign(o) * s * .5 + .5, (720. - p.z) / 3700.)).r; }
+  return texture2D(uSunMap, vec2(sign(o) * s * .5 + .5, (1020. - p.z) / 4000.)).r; }
 float marchSun(vec3 p, vec3 sun){ float v = 1., t = 5.; p.y += 1.5;
   for (int i = 0; i < 18; i++){ vec3 q = p + sun * t; if (q.y > 330.) break; v = min(v, .5 + 7. * (q.y - hAt(q.xz)) / t); t *= 1.32; if (v <= 0.) break; }
   return smoothstep(0., 1., v); }`;

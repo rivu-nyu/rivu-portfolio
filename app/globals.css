@@ -89,11 +89,16 @@ dd{color:var(--soft)}
 .role{color:var(--gold);margin:4px 0 16px}
 .job ul{padding-left:18px;display:grid;gap:9px;color:var(--soft)}
 .job li::marker{color:var(--ember)}
+.longname{font-size:25px}
+.job .role{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 16px}
+.role span{color:var(--soft);font-size:14px}
+.cite{color:var(--gold);font-size:.86em;margin-left:4px;font-weight:600}
+.cite:hover,.refs a:hover{text-decoration:underline;text-underline-offset:3px}
+.refs{display:grid;gap:4px;margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font-size:14px;color:var(--gold)}
 .result{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);color:var(--text);font-weight:600}
 .metric{font-family:var(--display),serif;font-size:clamp(32px,3.2vw,44px);line-height:1.15;font-variant-numeric:tabular-nums}
 .metric small{font-size:.45em}
 
-.labgrid{display:grid;grid-template-columns:1fr 1fr;gap:22px;width:min(1060px,100%)}
 .pubs h2{font-size:clamp(28px,2.8vw,40px);margin-bottom:6px}
 .paper{display:grid;grid-template-columns:168px 1fr;gap:18px;padding:18px 0}
 .paper+.paper{border-top:1px solid var(--line)}
@@ -106,8 +111,8 @@ dd{color:var(--soft)}
 .teaching dt{color:var(--text)}
 .teaching ul{margin-top:8px}
 .year{color:var(--ember);font-weight:600}
-.labgrid h3{margin-bottom:8px}
-.labgrid label{display:flex;justify-content:space-between;margin:20px 0 10px}
+.labs .panel h3{margin-bottom:8px}
+.labs label{display:flex;justify-content:space-between;margin:20px 0 10px}
 input[type=range]{width:100%;accent-color:var(--ember)}
 .choices,.prompts{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
 .choices button,.prompts button{border:1px solid var(--line);background:rgba(255,235,215,.06);padding:8px 13px;border-radius:8px;font-size:14px}
@@ -151,7 +156,6 @@ footer{padding:22px var(--gutter);display:flex;justify-content:space-between;gap
   .hero{padding-bottom:7vh}
   .right{padding-right:var(--gutter)}
   .left>*,.right>*{width:100%}
-  .labgrid{grid-template-columns:1fr}
   .paper{grid-template-columns:1fr;gap:14px}
   .paper img{height:auto;min-height:0;aspect-ratio:16/9}
   .jobhead h3{font-size:26px}

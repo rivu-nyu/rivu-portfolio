@@ -1,20 +1,25 @@
 // One stop per page section, in page order. The phoenix flies between them.
+// hold: keep this view while its whole section scrolls past
 // az: camera angle around the bird (deg, 0 = behind, 180 = in front)
 // sx/sy: where the bird sits on screen, as a fraction of the viewport from centre
 // sun: [degrees left of camera view, elevation in degrees]
 export const STOP_GAP = 300;
+export const FIRST = 1; // stop index that sits at z = 0
+export const zOf = (p) => (FIRST - p) * STOP_GAP;
 export const STOPS = [
-  { id: 'home', place: 'Sunrise Pass', az: 152, dist: 21, up: 2.8, sx: 0.12, sy: -0.04, alt: 17, hover: 0,
+  { id: 'home', place: 'Sunrise Pass', az: 166, dist: 21, up: 2.6, sx: 0.12, sy: -0.04, alt: 17, hover: 0,
     sun: [-26, 13], sunCol: '#ffc486', sunI: 4.4, zenith: '#3565a8', horizon: '#f2cda8', sky: '#a9c0e4', ground: '#6a5a48', fog: '#b9b6c4', den: 0.0008, night: 0, cloud: 0.42 },
   { id: 'about', place: 'River Valley', az: 52, dist: 17, up: 1, sx: 0.23, sy: 0, alt: 14, hover: 0,
     sun: [24, 34], sunCol: '#ffe9c6', sunI: 3.5, zenith: '#2c66ab', horizon: '#c2daec', sky: '#9cbbe0', ground: '#5a5c45', fog: '#b4cbdc', den: 0.00075, night: 0, cloud: 0.45 },
+  { id: 'labs', place: 'Silver Falls', az: -98, dist: 25, up: 2.4, sx: -0.3, sy: 0.15, alt: 20, hover: 0, hold: true,
+    sun: [154, 35], sunCol: '#ffdfae', sunI: 3, zenith: '#2560ad', horizon: '#bcd6e6', sky: '#7299cc', ground: '#3f4a33', fog: '#9dbccb', den: 0.0011, night: 0, cloud: 0.45 },
   { id: 'work', place: 'Red Canyon', az: -38, dist: 18, up: 2, sx: 0.25, sy: -0.02, alt: 16, hover: 0,
     sun: [38, 30], sunCol: '#ffd9ab', sunI: 4.2, zenith: '#3f72b0', horizon: '#e9d2b8', sky: '#aab6cf', ground: '#7d6450', fog: '#cdb5a2', den: 0.0012, night: 0, cloud: 0.35 },
   { id: 'research', place: 'Mirror Lake', az: 18, dist: 18, up: 2.6, sx: -0.23, sy: 0, alt: 13, hover: 0,
     sun: [-14, 8], sunCol: '#ffa066', sunI: 3.6, zenith: '#3a4d8c', horizon: '#f0a07c', sky: '#8d90bd', ground: '#4d4350', fog: '#b08c98', den: 0.0012, night: 0, cloud: 0.5 },
   { id: 'skills', place: 'Snow Ridge', az: -58, dist: 18, up: 3, sx: -0.24, sy: 0, alt: 16, hover: 0,
     sun: [58, 26], sunCol: '#ffd2a0', sunI: 2.1, zenith: '#2f66ad', horizon: '#d9c3b8', sky: '#6f95d0', ground: '#5d6c94', fog: '#b9c6dc', den: 0.0011, night: 0, cloud: 0.4 },
-  { id: 'lab', place: 'Ember Caldera', az: -125, dist: 17, up: 1, sx: 0, sy: -0.2, alt: 17, hover: 0,
+  { id: 'lab', place: 'Ember Caldera', az: -125, dist: 17, up: 1, sx: 0.23, sy: 0, alt: 17, hover: 0,
     sun: [30, 10], sunCol: '#ffa777', sunI: 3.6, zenith: '#3b3a52', horizon: '#d88a62', sky: '#93808a', ground: '#5e4a44', fog: '#7f6a68', den: 0.0013, night: 0.25, cloud: 0.75 },
   { id: 'twin', place: 'The Phoenix', az: -160, dist: 18.5, up: 0.2, sx: -0.25, sy: 0.02, alt: 20, hover: 1,
     sun: [36, 9], sunCol: '#ff8a52', sunI: 2.4, zenith: '#2a2940', horizon: '#c0603c', sky: '#7d6c7c', ground: '#584440', fog: '#6b5557', den: 0.0014, night: 0.45, cloud: 0.7 },

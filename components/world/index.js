@@ -2,11 +2,13 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { shared, HMAP, lerp, smooth, noise } from './common';
-import { STOPS, STOP_GAP } from './stops';
+import { STOPS, zOf } from './stops';
 import { createTerrain, createWater, createTrees, createRocks, createGrass, createPerches, center, height } from './landscape';
 import { createSky, createMist, createSmoke } from './sky';
+import { createWaterfall, createAir } from './waterfall';
 import { createBehaviour, heading } from './behaviour';
 import { createPhoenix } from './phoenix';
 import { createFire } from './fire';
@@ -18,13 +20,13 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   const small = window.innerWidth < 800, low = small || (navigator.hardwareConcurrency || 8) < 5;
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   let dpr = Math.min(window.devicePixelRatio, low ? 1.1 : 1.25);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.24;
   const u = shared(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(42, 1, 0.5, 2600);
   const phx = createPhoenix(u), fire = createFire(u, low ? 1300 : 3000);
   phx.group.rotation.order = 'YXZ';
   const terrain = createTerrain(u, low), perches = createPerches(), trees = createTrees(u, low, perches), rocks = createRocks(u, low, perches), bird = createBehaviour(perches);
   const smoke = createSmoke(u); rocks.children[0].layers.enable(1);
-  scene.add(createSky(u), terrain, createWater(u), trees, rocks, createGrass(u, low), createMist(u, low), smoke, phx.group, fire.mesh);
+  scene.add(createSky(u), terrain, createWater(u), trees, rocks, createGrass(u, low), createMist(u, low), smoke, createWaterfall(u, low), createAir(u, low), phx.group, fire.mesh);
 
   // embers the bird feeds on
   const coals = new THREE.Group(); { const g = new THREE.IcosahedronGeometry(0.1, 1), m = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.3, 0.03) }), m2 = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.7, 0.07, 0.01) }); for (let i = 0; i < 7; i++) { const k = new THREE.Mesh(g, i % 2 ? m : m2); k.position.set(Math.sin(i * 2.4) * 0.17 * Math.sqrt(i / 2), 0.07, Math.cos(i * 2.4) * 0.17 * Math.sqrt(i / 2)); k.scale.setScalar(0.65 + (i % 3) * 0.25); coals.add(k); } } scene.add(coals);
@@ -44,7 +46,7 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   // mountain-scale shadows: one small map over the whole valley, refreshed only when the sun moves
   const sunRT = new THREE.WebGLRenderTarget(192, 900, { depthBuffer: false }); u.uSunMap.value = sunRT.texture;
   const sunQuad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: u, vertexShader: 'varying vec2 vU; void main(){ vU = uv; gl_Position = vec4(position.xy, 0., 1.); }',
-    fragmentShader: `precision highp float; varying vec2 vU; uniform vec3 uSunDir; ${HMAP} void main(){ float s = vU.x * 2. - 1., z = 720. - vU.y * 3700., x = vcenter(z) + sign(s) * (90. * abs(s) + 560. * s * s); vec2 p = vec2(x, z); gl_FragColor = vec4(vec3(marchSun(vec3(x, hAt(p), z), uSunDir)), 1.); }` }));
+    fragmentShader: `precision highp float; varying vec2 vU; uniform vec3 uSunDir; ${HMAP} void main(){ float s = vU.x * 2. - 1., z = 1020. - vU.y * 4000., x = vcenter(z) + sign(s) * (90. * abs(s) + 560. * s * s); vec2 p = vec2(x, z); gl_FragColor = vec4(vec3(marchSun(vec3(x, hAt(p), z), uSunDir)), 1.); }` }));
   const sunWas = new THREE.Vector3();
   function renderSun() { if (sunWas.distanceToSquared(u.uSunDir.value) < 1e-6) return; sunWas.copy(u.uSunDir.value); u.uSunMap.value = null; renderer.setRenderTarget(sunRT); sunQuad.render(renderer); renderer.setRenderTarget(null); u.uSunMap.value = sunRT.texture; }
   function renderShadow(at) {
@@ -68,10 +70,18 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
     render(r, _w, read) { r.setRenderTarget(msaa); r.clear(); r.render(scene, camera); r.setRenderTarget(read); this.copy.render(r); }
     dispose() { msaa.dispose(); this.copy.material.dispose(); this.copy.dispose(); }
   }
-  composer.addPass(new ScenePass()); composer.addPass(bloom); composer.addPass(new OutputPass());
+  composer.addPass(new ScenePass()); composer.addPass(bloom);
+  // light shafts from the sun and a gentle film grade
+  const grade = new ShaderPass({ uniforms: { tDiffuse: { value: null }, uSun: { value: new THREE.Vector3() }, uCol: { value: new THREE.Color() }, uAsp: { value: 1 } }, vertexShader: 'varying vec2 v; void main(){ v = uv; gl_Position = vec4(position.xy, 0., 1.); }',
+    fragmentShader: `varying vec2 v; uniform sampler2D tDiffuse; uniform vec3 uSun, uCol; uniform float uAsp;
+      void main(){ vec3 c = texture2D(tDiffuse, v).rgb;
+        if (uSun.z > .01) { vec2 d = (uSun.xy - v) / 14. * .82; float j = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(.0671, .00584)))); vec2 p = v + d * j; float s = 0., w = 1.; for (int i = 0; i < 14; i++) { if (p.x > 0. && p.x < 1. && p.y > 0. && p.y < 1.) { vec3 t = texture2D(tDiffuse, p).rgb; s += smoothstep(.55, 1.5, min(t.b * 1.35, min(t.r, t.g))) * w; } p += d; w *= .94; } float r = length((uSun.xy - v) * vec2(uAsp, 1.)); c += uCol * s * .014 * uSun.z * smoothstep(1.5, .1, r); }
+        float l = dot(c, vec3(.2126,.7152,.0722)); c = mix(vec3(l), c, 1.10); c = pow(max(c, 0.), vec3(1.06)) * 1.06; c *= mix(vec3(.985,.995,1.02), vec3(1.02,1.,.975), smoothstep(.05, .9, l));
+        vec2 q = v - .5; c *= 1. - dot(q, q) * .34; gl_FragColor = vec4(c, 1.); }` });
+  composer.addPass(grade); composer.addPass(new OutputPass());
 
   // palette, parsed once; sun directions become world-space yaws
-  const pal = STOPS.map((s, i) => { const C = (c) => new THREE.Color(c), yaw = heading(-i * STOP_GAP) + s.az * RAD + s.sun[0] * RAD, e = s.sun[1] * RAD;
+  const pal = STOPS.map((s, i) => { const C = (c) => new THREE.Color(c), yaw = heading(zOf(i)) + s.az * RAD + s.sun[0] * RAD, e = s.sun[1] * RAD;
     return { ...s, sunDir: new THREE.Vector3(Math.sin(yaw) * Math.cos(e), Math.sin(e), Math.cos(yaw) * Math.cos(e)), sunC: C(s.sunCol).multiplyScalar(s.sunI), zenith: C(s.zenith), horizon: C(s.horizon), sky: C(s.sky), ground: C(s.ground), fog: C(s.fog) }; });
   let targetP = 0, P = -1, W = 1, H = 1, frame = 0, last = performance.now(), time = 0, phase = 0, stop = -1, scrollAt = -1e9, restK = 0;
   const foff = vec(), focus = vec();
@@ -79,9 +89,10 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   const camPos = vec(), a = vec(), b = vec(), c = vec(), phxPos = vec();
 
   function measure() {
-    const mid = window.innerHeight * 0.5, C = STOPS.map((s) => { const n = document.getElementById(s.id); if (!n) return 0; const r = n.getBoundingClientRect(); return r.top + r.height / 2; });
-    let p = 0;
-    if (mid >= C[C.length - 1]) p = C.length - 1; else for (let i = 0; i < C.length - 1; i++) if (mid >= C[i] && mid < C[i + 1]) { p = i + (mid - C[i]) / (C[i + 1] - C[i]); break; }
+    // each stop covers a span of the page: a point for most, the whole section for stops that hold
+    const mid = window.innerHeight * 0.5, C = STOPS.map((s) => { const n = document.getElementById(s.id); if (!n) return [0, 0]; const r = n.getBoundingClientRect(), c = r.top + r.height / 2, h = s.hold ? Math.max(0, r.height / 2 - window.innerHeight * 0.32) : 0; return [c - h, c + h]; });
+    let p = 0; const last = C.length - 1;
+    if (mid >= C[last][0]) p = last; else for (let i = 0; i < last; i++) { if (mid >= C[i][0] && mid <= C[i][1]) { p = i; break; } if (mid > C[i][1] && mid < C[i + 1][0]) { p = i + (mid - C[i][1]) / (C[i + 1][0] - C[i][1]); break; } }
     targetP = p; if (reduced) request();
   }
   function resize() {
@@ -92,18 +103,18 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
 
   function spawn(dt) {
     const rest = bird.rest;
-    acc += dt * (low ? 260 : 620) * (0.6 + speed * 0.4 + think * 0.8) * (1 - rest * 0.9); const back = c.set(0, 0, -1).applyQuaternion(phx.group.quaternion);
+    acc += dt * (low ? 260 : 620) * (0.6 + speed * 0.4 + think * 0.8) * (1 - rest * 0.72); const back = c.set(0, 0, -1).applyQuaternion(phx.group.quaternion);
     while (acc > 1) { acc--; const r = Math.random();
-      if (r < 0.42 && bird.fold < 0.3) phx.wingPoint(Math.random() < 0.5 ? 1 : -1, 2.6 + Math.random() * 3.1, -0.5 - Math.random() * 1.5, a); else phx.tailPoint(a);
+      if (r < 0.42 && bird.fold < 0.6) phx.wingPoint(Math.random() < 0.5 ? 1 : -1, 2.6 + Math.random() * 3.1, -0.5 - Math.random() * 1.5, a); else phx.tailPoint(a);
       const spark = Math.random() < 0.22 + rest * 0.5; b.copy(back).multiplyScalar((3 + Math.random() * 4) * (1 - rest)).add({ x: (Math.random() - 0.5) * 0.9, y: (Math.random() - 0.3) * 0.9, z: (Math.random() - 0.5) * 0.9 });
       fire.emit(a, b, spark ? 1 + Math.random() * 1.6 : 0.3 + Math.random() * 0.45, spark ? 0.06 : 0.16 + Math.random() * 0.26, spark ? 1 : 0); }
     if (bird.eat > 0.2 && Math.random() < dt * (6 + bird.peck * 50)) { a.copy(coals.position); fire.emit(a, b.set((Math.random() - 0.5) * 1.5, 1 + Math.random() * 1.4, (Math.random() - 0.5) * 1.5), 0.8, 0.05, 1); }
     if (breath > 0.15) { phx.beak(a); phx.forward(b); const n = Math.ceil(dt * (low ? 90 : 170));
       for (let i = 0; i < n; i++) { const sp = Math.random() < 0.14, s = 10 + Math.random() * 6; c.copy(b).multiplyScalar(s).add({ x: (Math.random() - 0.5) * 2.2, y: (Math.random() - 0.5) * 2.2, z: (Math.random() - 0.5) * 2.2 });
         fire.emit(a, c, sp ? 1.6 : 0.5 + Math.random() * 0.6, sp ? 0.08 : (0.14 + Math.random() * 0.3) * breath, sp ? 1 : 0); } }
-    const vd = smooth(4.35, 4.7, P) * (1 - smooth(6.6, 7, P)); // lava fountain
+    const vd = smooth(5.35, 5.7, P) * (1 - smooth(7.6, 8, P)); // lava fountain
     for (let k = vd * dt * (low ? 25 : 60) + Math.random() * 0.999 * (vd > 0 ? 1 : 0); k >= 1; k--) { a.copy(smoke.userData.vent); a.x += (Math.random() - 0.5) * 10; a.z += (Math.random() - 0.5) * 10; const sp = Math.random() < 0.4; fire.emit(a, b.set((Math.random() - 0.5) * 24, 24 + Math.random() * 34, (Math.random() - 0.5) * 24), sp ? 2.6 + Math.random() : 1.4 + Math.random() * 0.9, sp ? 0.9 : 3.2 + Math.random() * 4, sp ? 1 : 0); }
-    const hot = smooth(4.3, 5, P) * (1 - smooth(6.3, 6.9, P));
+    const hot = smooth(5.3, 6, P) * (1 - smooth(7.3, 7.9, P));
     if (Math.random() < hot * dt * 40) { a.copy(camera.position).add({ x: (Math.random() - 0.5) * 40, y: -10 + Math.random() * 14, z: (Math.random() - 0.5) * 40 }); fire.emit(a, b.set((Math.random() - 0.5) * 2, 1.5, (Math.random() - 0.5) * 2), 4, 0.1, 1); }
     fire.flush();
   }
@@ -111,10 +122,10 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   function update(dt, now) {
     if (P < 0 || reduced) P = targetP; else P += (targetP - P) * (1 - Math.exp(-dt * 2.6 * bird.align()));
     const i = Math.min(STOPS.length - 2, Math.floor(P)), f = P - i, e = smooth(0, 1, f), A = pal[i], B = pal[i + 1], mixN = (k) => lerp(A[k], B[k], e);
-    const hover = mixN('hover'), yaw0 = heading(-P * STOP_GAP), tall = W / H < 0.8, sxRaw = mixN('sx');
+    const hover = mixN('hover'), yaw0 = heading(zOf(P)), tall = W / H < 0.8, sxRaw = mixN('sx');
     const ang = yaw0 + Math.PI + mixN('az') * RAD + cmx * 0.16, camYaw = Math.atan2(Math.sin(ang), Math.cos(ang));
     if (!reduced) bird.step(dt, time, { P, targetP, alt: mixN('alt'), hover, scrolling: now - scrollAt < 160, camYaw, faceSign: sxRaw >= 0 ? -1 : 1 });
-    else { bird.pos.set(center(-P * STOP_GAP) * 0.9, mixN('alt'), -P * STOP_GAP); bird.base.copy(bird.pos); bird.yaw = yaw0; bird.S = 0; }
+    else { bird.pos.set(center(zOf(P)) * 0.9, mixN('alt'), zOf(P)); bird.base.copy(bird.pos); bird.yaw = yaw0; bird.S = 0; }
     speed = bird.speed;
     u.uTime.value = time; u.uSunDir.value.copy(A.sunDir).lerp(B.sunDir, e).normalize(); u.uSunCol.value.copy(A.sunC).lerp(B.sunC, e);
     u.uSky.value.copy(A.sky).lerp(B.sky, e); u.uGround.value.copy(A.ground).lerp(B.ground, e); u.uFog.value.copy(A.fog).lerp(B.fog, e); u.uZenith.value.copy(A.zenith).lerp(B.zenith, e); u.uHorizon.value.copy(A.horizon).lerp(B.horizon, e);
@@ -143,6 +154,8 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
     const sx = tall ? 0 : sxRaw * (W / H < 1.2 ? 0.6 : 1), sy = tall ? -0.26 : mixN('sy') - lowK * restK * 0.05;
     camera.setViewOffset(W, H, -sx * W, -sy * H, W, H);
     trees.userData.lod(camPos.z);
+    camera.updateMatrixWorld(); a.copy(u.uSunDir.value).multiplyScalar(1000).add(camera.position).project(camera); const facing = camera.getWorldDirection(b).dot(u.uSunDir.value);
+    grade.uniforms.uSun.value.set(a.x * 0.5 + 0.5, a.y * 0.5 + 0.5, smooth(0.35, 0.75, facing)); grade.uniforms.uCol.value.copy(u.uSunCol.value); grade.uniforms.uAsp.value = W / H;
 
     if (!reduced) spawn(dt);
     const s = Math.round(targetP); if (s !== stop) { stop = s; onStop?.(s); }

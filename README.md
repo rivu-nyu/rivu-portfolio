@@ -19,7 +19,7 @@ Open http://localhost:3000. For production use `npm run build` then `npm start`.
 - `app/globals.css`: colors, responsive layout and typography.
 - `components/World.jsx`: mounts the 3D world and flight-path navigation.
 - `components/world/stops.js`: one entry per section: camera angle, light, fog and colors.
-- `components/world/landscape.js`, `sky.js`, `phoenix.js`, `behaviour.js`, `fire.js`, `index.js`: terrain, sky, the bird, what it does (fly, land, rest actions), flames, camera.
+- `components/world/landscape.js`, `sky.js`, `phoenix.js`, `behaviour.js`, `waterfall.js`, `fire.js`, `index.js`: terrain, sky, the bird, what it does (fly, land, rest actions), flames, camera.
 - `public/textures/`: CC0 scanned surfaces from Poly Haven (see CREDITS.txt).
 - `components/data.js`: professional history, publications and assistant knowledge.
 - `components/Lab.jsx`: educational quantization calculator and synthetic attention visualizer.

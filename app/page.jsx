@@ -1,7 +1,7 @@
 import World from '../components/World';
 import Lab from '../components/Lab';
 import Twin from '../components/Twin';
-import { experience, papers, skills, teaching } from '../components/data';
+import { education, research, experience, papers, skills, teaching } from '../components/data';
 import { ArrowDown, ArrowUpRight, Flame, Github, Linkedin, Mail } from 'lucide-react';
 
 export default function Home() {
@@ -11,7 +11,7 @@ export default function Home() {
       <header>
         <nav className="nav" aria-label="Main">
           <a className="brand" href="#home">rivu<span>.</span></a>
-          <div className="navlinks"><a href="#about">About</a><a href="#work">Work</a><a href="#research">Publications</a><a href="#skills">Skills</a><a href="#lab">Lab</a></div>
+          <div className="navlinks"><a href="#about">About</a><a href="#labs">Research</a><a href="#work">Work</a><a href="#research">Publications</a><a href="#skills">Skills</a><a href="#lab">Lab</a></div>
           <a className="navcta" href="#twin"><Flame size={15} /> Ask the phoenix</a>
         </nav>
       </header>
@@ -32,17 +32,29 @@ export default function Home() {
           <div className="panel">
             <h2>Curiosity is my constant</h2>
             <p>My journey spans multimodal learning and robotics research at NYU, efficient LLM inference at Arya.ai, multilingual NLP at PwC and data engineering at Presto Automation.</p>
-            <dl className="education">
-              <div><dt>New York University, Courant</dt><dd>M.S. Computer Science, 2024–2026. GPA 3.87/4.0</dd></div>
-              <div><dt>IIEST Shibpur</dt><dd>B.S. Computer Science, 2020–2024. GPA 8.8/10, First Class</dd></div>
-            </dl>
+            <dl className="education">{education.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
             <a className="textlink" href="https://github.com/DevRivu" target="_blank" rel="noreferrer">View GitHub <ArrowUpRight size={16} /></a>
+          </div>
+        </section>
+
+        <section id="labs" className="stop right">
+          <div className="stack">
+            <h2 className="onscene">Research experience</h2>
+            {research.map((e) => (
+              <article key={e.org} className="panel job">
+                <h3 className="longname">{e.org}</h3>
+                <p className="role">{e.role}{e.date && <span>{e.date}</span>}</p>
+                <ul>{e.points.map(([text, ...refs]) => <li key={text}>{text}{refs.map((n) => <a className="cite" key={n} href={`https://doi.org/${papers[n - 1].doi}`} target="_blank" rel="noreferrer" aria-label={`Reference ${n}: ${papers[n - 1].title}`}>[{n}]</a>)}</li>)}</ul>
+                {e.result && <p className="result">{e.result}</p>}
+                {!e.result && <p className="refs">{papers.map((p, i) => <a key={p.doi} href={`https://doi.org/${p.doi}`} target="_blank" rel="noreferrer">[{i + 1}] {p.title.split(':')[0]}, {p.year}</a>)}</p>}
+              </article>
+            ))}
           </div>
         </section>
 
         <section id="work" className="stop left">
           <div className="stack">
-            <h2 className="onscene">Research meets the real world</h2>
+            <h2 className="onscene">Professional experience</h2>
             {experience.map((e) => (
               <article key={e.org} className="panel job">
                 <div className="jobhead"><h3>{e.org}</h3><span>{e.date}</span></div>
@@ -68,7 +80,7 @@ export default function Home() {
                 <div>
                   <h3>{p.title}</h3>
                   <p><span className="year">{p.year}</span> {p.venue}</p>
-                  <a className="textlink" href={`https://scholar.google.com/scholar?q=${encodeURIComponent(p.title)}`} target="_blank" rel="noreferrer" aria-label={`Find publication: ${p.title}`}>Find publication <ArrowUpRight size={15} /></a>
+                  <a className="textlink" href={`https://doi.org/${p.doi}`} target="_blank" rel="noreferrer" aria-label={`Read publication: ${p.title}`}>Read publication <ArrowUpRight size={15} /></a>
                 </div>
               </article>
             ))}
@@ -82,9 +94,11 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="lab" className="stop low">
-          <h2 className="onscene">Ideas you can touch</h2>
-          <Lab />
+        <section id="lab" className="stop left">
+          <div className="stack labs">
+            <h2 className="onscene">Ideas you can touch</h2>
+            <Lab />
+          </div>
         </section>
 
         <section id="twin" className="stop right">
