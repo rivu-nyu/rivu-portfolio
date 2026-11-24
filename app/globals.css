@@ -72,6 +72,18 @@ header{position:fixed;inset:0 0 auto;z-index:50;background:rgba(20,13,12,.4);bac
 .herocopy{width:min(680px,100%)}
 .herocopy .lead{max-width:500px;font-size:clamp(18px,1.6vw,21px);color:var(--text);margin-top:20px;line-height:1.5;text-shadow:0 1px 14px rgba(15,6,3,.95),0 0 3px rgba(15,6,3,.6)}
 .actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
+/* profile links as ember seals */
+.sigils{display:flex;flex-wrap:wrap;gap:26px;margin-top:4px}
+.sigils a{display:flex;flex-direction:column;align-items:center;gap:10px;font-size:14px;color:var(--soft);text-shadow:0 1px 8px rgba(10,4,2,.9);transition:color .25s}
+.sigils i{position:relative;display:grid;place-items:center;width:60px;height:60px;border-radius:50%;color:var(--gold);background:radial-gradient(circle at 50% 118%,rgba(255,112,32,.62),rgba(60,18,8,.82) 52%,rgba(20,10,9,.86) 78%);box-shadow:inset 0 0 0 1.5px rgba(255,201,143,.62),inset 0 0 0 5px rgba(20,10,9,.5),inset 0 0 0 6px rgba(255,160,90,.28),0 6px 24px rgba(10,4,2,.5),0 0 22px rgba(255,112,32,.28);transition:color .25s,box-shadow .35s,transform .35s}
+.sigils i::before{content:"";position:absolute;inset:-9px;border-radius:50%;background:conic-gradient(from 0deg,transparent 0 12%,rgba(255,141,69,.95) 24%,#ffe0b4 30%,transparent 44% 60%,rgba(255,112,32,.8) 76%,transparent 90%);filter:blur(5px);opacity:0;transition:opacity .35s;z-index:-1}
+.sigils a:hover,.sigils a:focus-visible{color:#fff3e2}
+.sigils a:hover i,.sigils a:focus-visible i{color:#fff3e2;transform:translateY(-3px);box-shadow:inset 0 0 0 1.5px #ffd9a8,inset 0 0 0 5px rgba(20,10,9,.35),inset 0 0 0 6px rgba(255,160,90,.5),0 8px 30px rgba(10,4,2,.5),0 0 42px rgba(255,120,40,.75)}
+.sigils a:hover i::before,.sigils a:focus-visible i::before{opacity:1;animation:emberring 2.4s linear infinite}
+.sigils a:focus-visible{outline:none}
+.sigils a:focus-visible i{outline:2px solid var(--gold);outline-offset:4px}
+@keyframes emberring{to{transform:rotate(1turn)}}
+@media (prefers-reduced-motion:reduce){.sigils i::before{animation:none!important}}
 .primary,.secondary{padding:14px 23px;font-size:15px}
 .primary{background:linear-gradient(180deg,#ffdcb4,#ffab66);color:#2a1003}
 .primary:hover{box-shadow:0 0 36px rgba(255,130,50,.6)}

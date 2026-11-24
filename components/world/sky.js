@@ -18,7 +18,7 @@ export function createSky(u) {
           float mk = milky * smoothstep(.30, .72, dust * .7 + dust2 * .35); float lane = smoothstep(.50, .62, fbm3(d * 8. + 11.)) * exp(-band0 * band0 * 160.);
           for (int k = 0; k < 3; k++){ float sc = k == 0 ? 120. : k == 1 ? 230. : 390.; vec3 q = d * sc, g = floor(q), f = fract(q) - .5; float r = hash3(g + float(k) * 19.); float th = (k == 0 ? .9945 : k == 1 ? .988 : .976) - (k == 0 ? .016 : k == 1 ? .055 : .10) * uHigh - mk * .035 * uHigh;
             float on = step(th, r); vec3 off = (vec3(hash3(g + 5.), hash3(g + 9.), hash3(g + 13.)) - .5) * .5; float rad = length(f - off); float tw = .72 + .28 * sin(uTime * (1.5 + r * 60. * .1) + r * 900.); vec3 tint = mix(vec3(1.,.82,.62), vec3(.68,.80,1.), hash3(g + 23.));
-            float core = smoothstep(.20, .0, rad) + (k == 0 ? .35 * exp(-rad * 15.) * smoothstep(.42, .22, rad) : 0.); c += uNight * on * core * tw * tint * (k == 0 ? 3.4 : k == 1 ? 1.5 : .75) * (1. + .9 * uHigh) * smoothstep(mix(.0, -.04, uHigh), mix(.16, .02, uHigh), d.y) * (1. - lane * .7); }
+            float core = smoothstep(.20, .0, rad) + (k == 0 ? .35 * exp(-rad * 15.) * smoothstep(.25, .08, rad) : 0.); c += uNight * on * core * tw * tint * (k == 0 ? 1.5 : k == 1 ? 1.1 : .75) * (1. + .9 * uHigh) * smoothstep(mix(.0, -.04, uHigh), mix(.16, .02, uHigh), d.y) * (1. - lane * .7); }
           c += uNight * uHigh * (mk * mix(vec3(.16,.19,.30), vec3(.36,.28,.31), dust2) * 1.05 * (1. - lane * .8)) * smoothstep(.0, .2, d.y);
           { float tt = uTime * .13, id = floor(tt), fr = fract(tt) * 7.; if (fr < 1. && uHigh > .5) { vec3 a0 = normalize(vec3(sin(id * 4.1), .35 + .3 * hash2(vec2(id, 2.)), cos(id * 2.7))), dv = normalize(vec3(cos(id * 3.3), -.45, sin(id * 1.9))); vec3 hd = normalize(a0 + dv * fr * .5); vec3 rel = d - hd; float al = dot(rel, -dv), pr = length(rel + dv * al); c += vec3(1.6,1.8,2.2) * smoothstep(.0025, .0, pr) * smoothstep(.16, .0, al) * step(0., al) * (1. - fr); } }
           vec2 p = d.xz / (max(d.y, 0.) + .16); vec2 sd = normalize(uSunDir.xz + 1e-4);
@@ -38,7 +38,7 @@ export function createSky(u) {
             vec2 w = vec2(tnS(p * .55 + 2.3 + uTime * .015), tnS(p * .55 + 7.1 - uTime * .012)) - .48; vec2 q = p * vec2(.62, .36) + w * 1.5; float n = tnS(q * .62); float ridge = smoothstep(.020, .0, abs(n - .48)); float ridge2 = smoothstep(.016, .0, abs(tnS(q * .5 + 9.) - .46)) * .75;
             float rays = .12 + 1.5 * pow(tnS(vec2(p.x * 5. + w.x * 6., p.y * 5.) / h + uTime * .10), 1.8); float v = (ridge + ridge2) * rays; float t = fi / 18.;
             vec3 hue = mix(vec3(.06, 1., .45), vec3(.10,.75,.80), smoothstep(.12,.45,t)); hue = mix(hue, vec3(.55,.16,.85), smoothstep(.4,.85,t)); acc += hue * v * exp(-t * 2.6) * smoothstep(0., .05, t + .02); }
-          c += acc * .6 * mix(.10, .40, smoothstep(.40, .60, tnS(d.xz * 1.6 / (d.y + .4) + 5.))) * uAurora * smoothstep(.015, .16, d.y);
+          c += acc * .46 * mix(.10, .40, smoothstep(.40, .60, tnS(d.xz * 1.6 / (d.y + .4) + 5.))) * uAurora * smoothstep(.015, .16, d.y);
           c += vec3(.006,.035,.022) * uAurora * exp(-d.y * 4.);
         }
         if (uHigh > .01) { float m = smoothstep(.99925, .99945, s); float cr = fbm3(d * 90.); vec3 mo = vec3(1.5,1.55,1.65) * (.72 + .5 * cr); c = mix(c, mo, m * uHigh); c += uSunCol * uHigh * (.05 * pow(s, 60.) + .22 * pow(s, 900.)); }

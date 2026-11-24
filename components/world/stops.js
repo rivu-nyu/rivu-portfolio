@@ -20,7 +20,7 @@ export const STOPS = [
   { id: 'skills', z: -1200, place: 'Snow Ridge', az: -58, dist: 18, up: 3, sx: -0.24, sy: 0, alt: 16, hover: 0,
     sun: [58, 26], sunCol: '#ffd2a0', sunI: 2.1, zenith: '#2f66ad', horizon: '#d9c3b8', sky: '#6f95d0', ground: '#5d6c94', fog: '#b9c6dc', den: 0.0011, night: 0, cloud: 0.4 },
   { id: 'interests', z: -1350, place: 'Sky Islands', tag: 'isles', az: -34, dist: 31, up: 1.5, sx: 0.23, sy: 0.23, alt: 440, hover: 0, hold: true,
-    sun: [58, 30], sunCol: '#c4d6ff', sunI: 2.7, zenith: '#02040c', horizon: '#0d1c3a', sky: '#5f82c4', ground: '#46598a', fog: '#14264a', den: 0.0022, night: 1, cloud: 0.02, aurora: 1 },
+    sun: [82, 30], sunCol: '#c4d6ff', sunI: 2.5, zenith: '#02040c', horizon: '#0d1c3a', sky: '#5f82c4', ground: '#46598a', fog: '#14264a', den: 0.0015, night: 1, cloud: 0.02, aurora: 1 },
   { id: 'lab', z: -1500, place: 'Ember Caldera', az: -125, dist: 17, up: 1, sx: 0.23, sy: 0, alt: 17, hover: 0,
     sun: [30, 12], sunCol: '#ff9c70', sunI: 2.3, zenith: '#131327', horizon: '#9c4a34', sky: '#6f6680', ground: '#5a443f', fog: '#4a3540', den: 0.0012, night: 0.7, cloud: 0.75 },
   { id: 'twin', z: -1800, place: 'The Phoenix', az: -160, dist: 18.5, up: 0.2, sx: -0.25, sy: 0.02, alt: 20, hover: 1,

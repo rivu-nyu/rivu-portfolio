@@ -6,7 +6,8 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { shared, HMAP, lerp, smooth, noise } from './common';
 import { STOPS, zOf, at } from './stops';
-import { createTerrain, createWater, createTrees, createRocks, createGrass, createPerches, center, height } from './landscape';
+import { createTerrain, createWater, createPerches, center, height } from './landscape';
+import { createFlora, createTrees, createRocks, createGrass } from './flora';
 import { createSky, createMist, createSmoke } from './sky';
 import { createWaterfall, createAir } from './waterfall';
 import { createCherry, createPetals } from './cherry';
@@ -26,9 +27,10 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   const u = shared(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(42, 1, 0.5, 2600);
   const phx = createPhoenix(u), fire = createFire(u, low ? 1300 : 3000);
   phx.group.rotation.order = 'YXZ';
-  const terrain = createTerrain(u, low), perches = createPerches(), cherry = createCherry(u, low, perches), isles = createIsles(u, low, perches), falls = createWaterfall(u, low), trees = createTrees(u, low, perches), rocks = createRocks(u, low, perches), bird = createBehaviour(perches);
-  const water = createWater(u), grass = createGrass(u, low), mist = createMist(u, low), valley = [terrain, water, trees, rocks, grass, mist];
-  const smoke = createSmoke(u); rocks.children[0].layers.enable(1);
+  const kick = () => request(), flora = createFlora(u, low, kick);
+  const terrain = createTerrain(u, low), perches = createPerches(), cherry = createCherry(u, low, perches, flora, kick), isles = createIsles(u, low, perches, flora), falls = createWaterfall(u, low), trees = createTrees(flora, low, perches), rocks = createRocks(u, low, perches, kick), bird = createBehaviour(perches);
+  const water = createWater(u), grass = createGrass(u, low, kick), mist = createMist(u, low), valley = [terrain, water, trees, rocks, grass, mist];
+  const smoke = createSmoke(u);
   scene.add(createSky(u), terrain, water, trees, rocks, grass, mist, smoke, falls, cherry, isles, createPetals(u, low), createAir(u, low), phx.group, fire.mesh);
 
   // embers the bird feeds on
@@ -36,16 +38,16 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
 
   // scanned surface textures
   const placeholder = new THREE.DataTexture(new Uint8Array([128, 120, 110, 255]), 1, 1), flat = new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1); placeholder.needsUpdate = flat.needsUpdate = true;
-  const loader = new THREE.TextureLoader(), tex = { tRock: 'rock', tRockN: 'rock_n', tCliff: 'cliff', tCliffN: 'cliff_n', tBasalt: 'basalt', tGrass: 'grass', tSand: 'sand', tBark: 'bark' };
+  const loader = new THREE.TextureLoader(), tex = { tRock: 'rock', tRockN: 'rock_n', tCliff: 'cliff', tCliffN: 'cliff_n', tBasalt: 'basalt', tGrass: 'grass', tSand: 'sand', tBark: 'bark', tLeafy: 'leafy', tForest: 'forest', tForestN: 'forest_n', tBoulder: 'boulder', tBoulderN: 'boulder_n', tCastle: 'castle', tCastleN: 'castle_n', tSlate: 'slate' };
   let texLeft = Object.keys(tex).length; const loaded = [];
-  for (const [k, n] of Object.entries(tex)) { u[k].value = k.endsWith('N') ? flat : placeholder; loader.load(`/textures/${n}.jpg`, (t) => { if (dead) return t.dispose(); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = low ? 2 : 4; if (!k.endsWith('N')) t.colorSpace = THREE.SRGBColorSpace; u[k].value = t; loaded.push(t); texLeft--; request(); }, undefined, () => { texLeft--; request(); }); }
+  for (const [k, n] of Object.entries(tex)) { u[k].value = k.endsWith('N') ? flat : placeholder; loader.load(`/textures/${n}.jpg`, (t) => { if (dead) return t.dispose(); t.wrapS = t.wrapT = THREE.RepeatWrapping; if (n.startsWith('boulder')) t.flipY = false; t.anisotropy = low ? 2 : 4; if (!k.endsWith('N')) t.colorSpace = THREE.SRGBColorSpace; u[k].value = t; loaded.push(t); texLeft--; request(); }, undefined, () => { texLeft--; request(); }); }
 
   // sun shadow map around the bird
   const SM = low ? 1024 : 2048, shadowRT = new THREE.WebGLRenderTarget(SM, SM, { depthTexture: new THREE.DepthTexture(SM, SM, THREE.UnsignedIntType) }), sun = new THREE.OrthographicCamera(-62, 62, 62, -62, 1, 420); sun.layers.set(1);
   shadowRT.depthTexture.minFilter = shadowRT.depthTexture.magFilter = THREE.NearestFilter; u.uShadow.value = shadowRT.depthTexture;
   const rockDepth = new THREE.ShaderMaterial({ side: THREE.DoubleSide, vertexShader: 'void main(){ gl_Position = projectionMatrix * viewMatrix * instanceMatrix * vec4(position, 1.); }', fragmentShader: 'void main(){ gl_FragColor = vec4(1.); }' });
-  rocks.children.forEach((r) => { r.userData.depthMat = rockDepth; r.layers.enable(1); });
-  const casters = []; scene.traverse((o) => { if (o.userData.depthMat) casters.push(o); });
+  let casters = []; const gather = () => { casters = []; scene.traverse((o) => { if (o.userData.depthMat && o.layers.isEnabled(1)) casters.push(o); }); };
+  const rocksIn = () => { rocks.children.forEach((r) => { r.userData.depthMat = rockDepth; r.layers.enable(1); }); gather(); }; rocks.userData.ready = rocksIn; cherry.userData.ready = gather; gather();
   // mountain-scale shadows: one small map over the whole valley, refreshed only when the sun moves
   const sunRT = new THREE.WebGLRenderTarget(192, 900, { depthBuffer: false }); u.uSunMap.value = sunRT.texture;
   const sunQuad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: u, vertexShader: 'varying vec2 vU; void main(){ vU = uv; gl_Position = vec4(position.xy, 0., 1.); }',
@@ -57,9 +59,9 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
     // snap to texels so shadows do not shimmer
     u.uShadowM.value.multiplyMatrices(sun.projectionMatrix, sun.matrixWorldInverse); const o = sv.set(0, 0, 0, 1).applyMatrix4(u.uShadowM.value), px = SM / 2; sun.projectionMatrix.elements[12] += (Math.round(o.x * px) - o.x * px) / px; sun.projectionMatrix.elements[13] += (Math.round(o.y * px) - o.y * px) / px; sun.projectionMatrixInverse.copy(sun.projectionMatrix).invert();
     u.uShadowM.value.multiplyMatrices(sun.projectionMatrix, sun.matrixWorldInverse);
-    for (const c of casters) { c.userData.mat = c.material; c.material = c.userData.depthMat; if (c.parent === trees) { c.userData.geo = c.geometry; c.geometry = trees.userData.shadowGeo; } }
+    for (const c of casters) { c.userData.mat = c.material; c.material = c.userData.depthMat; }
     u.uShadow.value = null; renderer.setRenderTarget(shadowRT); renderer.clear(); renderer.render(scene, sun); renderer.setRenderTarget(null); u.uShadow.value = shadowRT.depthTexture;
-    for (const c of casters) { c.material = c.userData.mat; if (c.parent === trees) c.geometry = c.userData.geo; }
+    for (const c of casters) { c.material = c.userData.mat; }
   }
   let shadowTick = 0; const bornAt = performance.now();
   const sv = new THREE.Vector4();
@@ -131,7 +133,6 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
     if (!reduced) bird.step(dt, time, { P, targetP, alt: mixN('alt'), hover, scrolling: now - scrollAt < 160, camYaw, faceSign: sxRaw >= 0 ? -1 : 1 });
     else { bird.pos.set(center(zOf(P)), mixN('alt'), zOf(P)); bird.base.copy(bird.pos); bird.yaw = yaw0; bird.S = 0; }
     speed = bird.speed; if (bird.event) { const [k, p] = bird.event; bird.event = null; isles.userData.burst(k === 'in' ? 0 : 1, p, k === 'in' ? 0.75 : 1.35); if (k === 'out') for (let i = 0; i < (low ? 120 : 420); i++) { const an = Math.random() * 6.28, sp = Math.random(); b.set(Math.cos(an) * (2 + 9 * sp), 5 + Math.random() * 16, Math.sin(an) * (2 + 9 * sp)); fire.emit(a.copy(p), b, 0.8 + Math.random() * 1.6, Math.random() < 0.5 ? 0.09 : 0.35 + Math.random() * 0.5, Math.random() < 0.5 ? 1 : 0); } }
-    isles.userData.update(time);
     u.uTime.value = time; u.uSunDir.value.copy(A.sunDir).lerp(B.sunDir, e).normalize(); u.uSunCol.value.copy(A.sunC).lerp(B.sunC, e);
     u.uSky.value.copy(A.sky).lerp(B.sky, e); u.uGround.value.copy(A.ground).lerp(B.ground, e); u.uFog.value.copy(A.fog).lerp(B.fog, e); u.uZenith.value.copy(A.zenith).lerp(B.zenith, e); u.uHorizon.value.copy(A.horizon).lerp(B.horizon, e);
     u.uDen.value = mixN('den') * (1 + 0.85 * Math.pow(Math.sin(Math.PI * f), 2) * (1 - smooth(150, 260, mixN('alt')))) * (1 + 1.9 * smooth(60, 190, mixN('alt')) * (1 - smooth(335, 385, mixN('alt')))); u.uNight.value = mixN('night'); u.uAurora.value = lerp(A.aurora || 0, B.aurora || 0, e); u.uCloud.value = mixN('cloud');
@@ -175,8 +176,8 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   function draw(now) {
     frame = 0; if (dead) return;
     const raw = (now - last) / 1000, dt = Math.min(0.05, Math.max(0.001, raw)); last = now; if (!reduced) time += dt;
-    update(dt, now); renderSun(); if ((shadowTick ^= 1) || reduced) renderShadow(phxPos); composer.render();
-    if (texLeft <= 0) el.classList.add('ready');
+    update(dt, now); if (isles.visible) isles.userData.shadow(renderer, pal[at('interests')].sunDir); renderSun(); if ((shadowTick ^= 1) || reduced) renderShadow(phxPos); composer.render();
+    if (texLeft <= 0 && flora.left() <= 0) el.classList.add('ready');
     // step resolution down on slow machines
     if (!reduced && !document.hidden && raw < 0.5 && now > bornAt + 3000) { frames++; if (raw > 0.030) slow++; if (frames >= 90) { if (slow > 55 && dpr > 0.9) { dpr = Math.max(0.9, dpr - 0.2); resize(); } frames = slow = 0; } }
     if (!reduced && !document.hidden) request();
@@ -192,5 +193,5 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   el.appendChild(renderer.domElement); resize(); request();
 
   return () => { dead = true; cancelAnimationFrame(frame); ro.disconnect(); window.removeEventListener('scroll', onScroll); window.removeEventListener('pointermove', onPointer); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('phoenix', onPhoenix);
-    scene.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); }); shadowRT.dispose(); sunRT.dispose(); sunQuad.material.dispose(); sunQuad.dispose(); loaded.forEach((t) => t.dispose()); u.uHMap.value?.dispose(); casters.forEach((c) => c.userData.depthMat.dispose()); trees.userData.extra.forEach((x) => x.dispose()); composer.passes.forEach((p) => p.dispose?.()); composer.dispose(); renderer.dispose(); renderer.domElement.remove(); el.classList.remove('ready'); };
+    scene.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); }); shadowRT.dispose(); sunRT.dispose(); sunQuad.material.dispose(); sunQuad.dispose(); loaded.forEach((t) => t.dispose()); u.uHMap.value?.dispose(); casters.forEach((c) => c.userData.depthMat.dispose()); flora.dispose(); rocks.userData.stop(); cherry.userData.stop(); grass.userData.stop(); isles.userData.stop(); composer.passes.forEach((p) => p.dispose?.()); composer.dispose(); renderer.dispose(); renderer.domElement.remove(); el.classList.remove('ready'); };
 }

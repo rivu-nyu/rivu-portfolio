@@ -17,7 +17,7 @@ export const shared = () => ({
   uPhxI: { value: 1 }, uAurora: { value: 0 }, uHigh: { value: 0 }, uSwirl: { value: 0 }, uEmber: { value: 0 },
   uShadow: { value: null }, uShadowM: { value: new THREE.Matrix4() },
   uHMap: { value: null }, uSunMap: { value: null }, tNoise: { value: noiseTexture() },
-  tRock: { value: null }, tRockN: { value: null }, tCliff: { value: null }, tCliffN: { value: null }, tBasalt: { value: null }, tGrass: { value: null }, tSand: { value: null }, tBark: { value: null },
+  tRock: { value: null }, tRockN: { value: null }, tCliff: { value: null }, tCliffN: { value: null }, tBasalt: { value: null }, tGrass: { value: null }, tSand: { value: null }, tBark: { value: null }, tLeafy: { value: null }, tForest: { value: null }, tForestN: { value: null }, tBoulder: { value: null }, tBoulderN: { value: null }, tCastle: { value: null }, tCastleN: { value: null }, tSlate: { value: null },
 });
 
 export const GLSL = /* glsl */ `
