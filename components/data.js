@@ -28,8 +28,7 @@ export const experience = [
     'Developed ARIMA demand forecasts and an interactive analytics dashboard.',
   ], result: 'Improved visibility into demand trends and anomalies.' },
 ];
-// Google Scholar: swap in the profile link once it is known; until then this finds the publications.
-export const scholar = 'https://scholar.google.com/scholar?q=%22A%20Deep%20Learning%20Framework%20for%20Classifying%20and%20Mitigating%20Bias%20in%20News%20Reporting%22';
+export const scholar = 'https://scholar.google.com/citations?user=bbjo5McAAAAJ&hl=en';
 export const papers = [
   { year: '2026', venue: 'ACM Transactions on Knowledge Discovery from Data, 20(3)', doi: '10.1145/3789258', title: 'Breaking Bias: A Context-Aware Multimodal Framework for Detecting and Neutralizing Ideological Bias in News', image: '/publications/neutralizing-bias.webp', alt: 'Illustration: a news page with loaded wording and a flagged photo passes through a glowing ring and comes out neutral' },
   { year: '2024', venue: 'Springer, Proceedings of the Future Technologies Conference 2024', doi: '10.1007/978-3-031-73125-9_27', title: 'A Deep Learning Framework for Classifying and Mitigating Bias in News Reporting', image: '/publications/trustworthy-news.webp', alt: 'Illustration: two news stories weighed on a brass balance in front of a neural network inside a glowing shield' },
