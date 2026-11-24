@@ -92,9 +92,10 @@ uniform sampler2D tNoise;
 float tn(vec2 p){ return texture2D(tNoise, p * .125).r; }
 float tn3(vec3 p, vec3 w){ return dot(vec3(tn(p.zy), tn(p.xz + 3.7), tn(p.xy + 1.3)), w); }
 uniform sampler2D tRock, tRockN, tCliff, tCliffN, tBasalt, tGrass, tSand, tLeafy, tForest, tForestN;
-vec3 tri(sampler2D t, vec3 p, vec3 w){ return texture2D(t, p.zy).rgb * w.x + texture2D(t, p.xz).rgb * w.y + texture2D(t, p.xy).rgb * w.z; }
+// sides that contribute nothing are not fetched
+vec3 tri(sampler2D t, vec3 p, vec3 w){ vec3 a = dFdx(p), b = dFdy(p), c = vec3(0.); if (w.x > 0.) c += textureGrad(t, p.zy, a.zy, b.zy).rgb * w.x; if (w.y > 0.) c += textureGrad(t, p.xz, a.xz, b.xz).rgb * w.y; if (w.z > 0.) c += textureGrad(t, p.xy, a.xy, b.xy).rgb * w.z; return c; }
 vec3 triN(sampler2D t, vec3 p, vec3 w, vec3 n, float k){
-  vec3 a = texture2D(t, p.zy).xyz * 2. - 1., b = texture2D(t, p.xz).xyz * 2. - 1., c = texture2D(t, p.xy).xyz * 2. - 1.;
+  vec3 X = dFdx(p), Y = dFdy(p), a = vec3(0.), b = vec3(0.), c = vec3(0.); if (w.x > 0.) a = textureGrad(t, p.zy, X.zy, Y.zy).xyz * 2. - 1.; if (w.y > 0.) b = textureGrad(t, p.xz, X.xz, Y.xz).xyz * 2. - 1.; if (w.z > 0.) c = textureGrad(t, p.xy, X.xy, Y.xy).xyz * 2. - 1.;
   return normalize(n + k * (vec3(0., a.y, a.x) * w.x + vec3(b.x, 0., b.y) * w.y + vec3(c.x, c.y, 0.) * w.z)); }
 vec3 planar(sampler2D t, vec2 p){ vec2 q = mat2(.82,.57,-.57,.82) * p; return mix(texture2D(t, p).rgb, texture2D(t, q * .31 + .37).rgb, smoothstep(.35,.65, n2(p * .7))); }
 `;
@@ -122,7 +123,7 @@ export function groundMaterial(u, { rock = false, far = false } = {}) {
       void main(){
         ${BIOME}
         vec3 G = normalize(vN), N = G; float dist = length(cameraPosition - vW);
-        vec3 w = pow(abs(G), vec3(5.)); w /= w.x + w.y + w.z;
+        vec3 w = pow(abs(G), vec3(5.)); w /= w.x + w.y + w.z; w = max(w - .06, 0.); w /= w.x + w.y + w.z;
         float big = tn(vW.xz * .022), fine = tn3(vW * .16, w), grit = tn3(vW * .9, w);
         float nk = exp(-dist * .0032);
         // rock, at two scales so tiling never reads
@@ -162,7 +163,8 @@ export function groundMaterial(u, { rock = false, far = false } = {}) {
         gr = mix(gr, mix(vec3(.055,.105,.022), vec3(.17,.21,.06), clamp(big * 1.5 - .35 + grit * .4, 0., 1.)) * (.6 + .8 * gr.g * 2.2), pinkK * .95); gr = mix(gr, soil, canyon); gr = mix(gr, mix(bs * .8, vec3(.085,.078,.08) * (.6 + grit), smoothstep(.4,.65,fine)), volc);
         }
         vec2 fp = vW.xz - vec2(${FALL.x.toFixed(2)}, ${FALL.z.toFixed(1)}); float nearF = (1. - hiA) * smoothstep(190., 120., length(fp));
-        if (nearF > .01) {
+        bool rocky = gs < .985;
+        if (nearF > .01 && rocky) {
           vec3 rs = tri(tRock, vW * .055, w) * (.55 + .75 * tri(tRock, vW * .16, w)); rk = mix(rk, pow(rs, vec3(1.35)) * .85, nearF * .75); N = normalize(mix(N, triN(tRockN, vW * .06, w, G, 1.5), nearF * .8)); rk *= mix(vec3(1.), vec3(.60,.58,.54) * (.75 + .5 * tn(vec2(fp.y * .16, vW.y * .05))), nearF); float moss = nearF * smoothstep(1.0, .35, slope + (fine - .5) * 1.1) * smoothstep(.42, .56, fine * .5 + grit * .5 + (tn(vW.xz * 1.9 + vW.y) - .48) * .5);
           rk = mix(rk, vec3(.035,.075,.016) * (.6 + grit * 1.4), moss * .9);
           float wetR = nearF * smoothstep(17., 3., abs(fp.y) + (fine - .5) * 12.) * smoothstep(-4., 12., fp.x); rk *= 1. - .5 * wetR;
@@ -234,7 +236,7 @@ function cliffPatch(mat, low) {
 }
 
 export function createTerrain(u, low) {
-  const step = low ? 6 : 4.2, cols = low ? 150 : 220, chunks = 12;
+  const step = low ? 6 : 4.2, cols = low ? 150 : 200, chunks = 32;
   const rowsTotal = Math.ceil((Z0 - Z1) / step / chunks) * chunks, dz = (Z0 - Z1) / rowsTotal, per = rowsTotal / chunks;
   const group = new THREE.Group(), mat = groundMaterial(u);
   const W = cols + 1, H = rowsTotal + 1, P = new Float32Array(W * H * 3), tex = new Uint16Array(W * H);
@@ -259,9 +261,15 @@ export function createTerrain(u, low) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     geo.setAttribute('aAo', new THREE.BufferAttribute(ao, 1)); geo.setIndex(idx);
-    group.add(new THREE.Mesh(geo, mat));
+    // coarser triangles far away: sub-pixel slivers cost far more than they show. Row edges keep full detail so chunks stay joined.
+    const lod = [idx, [], []]; for (const [L, st] of [[1, 2], [2, 4]]) { const out = lod[L]; for (let j = 0; j < per; j += st) for (let i = 0; i < cols; i += st) { const v = (a, b) => (j + b) * W + i + a;
+      if (j === 0 || j + st === per) { const e = j === 0 ? 0 : st, f = j === 0 ? st : 0; for (let q = 0; q < st; q++) j === 0 ? out.push(v(q, e), v(q + 1, e), v(q < st / 2 ? 0 : st, f)) : out.push(v(q + 1, e), v(q, e), v(q < st / 2 ? 0 : st, f)); j === 0 ? out.push(v(st / 2, e), v(st, f), v(0, f)) : out.push(v(st / 2, e), v(0, f), v(st, f)); }
+      else out.push(v(0, 0), v(st, 0), v(0, st), v(st, 0), v(st, st), v(0, st)); } }
+    const lods = lod.map((x) => new THREE.BufferAttribute(W * (per + 1) > 65535 ? new Uint32Array(x) : new Uint16Array(x), 1));
+    { const m = new THREE.Mesh(geo, mat); m.renderOrder = 5; m.userData.lod = { lods, z0: Z0 - c * per * dz, z1: Z0 - (c + 1) * per * dz }; group.add(m); } // after everything that stands on it
   }
-  group.add(cliffPatch(mat, low));
+  { const m = cliffPatch(mat, low); m.renderOrder = 4; group.add(m); }
+  group.userData.lod = (z) => { for (const m of group.children) { const l = m.userData.lod; if (!l) continue; const d = z > l.z0 ? z - l.z0 : z < l.z1 ? l.z1 - z : 0; const ix = l.lods[d < 190 ? 0 : d < 480 ? 1 : 2]; if (m.geometry.index !== ix) m.geometry.setIndex(ix); } };
   return group;
 }
 

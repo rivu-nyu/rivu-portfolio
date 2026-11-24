@@ -57,11 +57,11 @@ export function createWaterfall(u, low, onLoad) {
   function build(D, sample) {
     if (gone) return; const pos = [], uv = [], data = [], idx = [];
     for (const f of FALLS) {
-      const M = Math.max(8, Math.round(f.w * 3.2)), cols = [], half = M / 2; let footX = 0, baseY = 0;
+      const M = Math.max(6, Math.round(f.w * 2)), cols = [], half = M / 2; let footX = 0, baseY = 0;
       const rock = (s, y, d) => Math.min(sample(D[f.tier], s, y), d); { let top = -1; for (let y = f.lip + 1; y > 5; y -= 0.5) if (sample(D[f.tier], f.s, y) < 1e3) { top = y; break; } if (top < 0) continue; f.lip = Math.min(f.lip, top - 0.2); }
       // where the middle of the fall leaves the lip, and where it lands
       const mid = rock(f.s, f.lip - 1.2, 1e4), march = (s, lip, x0) => { const path = []; let x = x0, y = lip; for (let g = 0; g < 400; g++) { const r = rock(s, y, 1e4); x = Math.min(x - 0.012, r > 1e3 ? x : r - 0.35); path.push([x, y]); const floor = f.tier === 1 ? -0.25 : height(x - 0.8, Z + s) + 0.2; if (y <= floor) break; y -= 0.4; } return path; };
-      const core = march(f.s, f.lip, Math.min(rock(f.s, f.lip - 0.8, mid), mid + 2.5)); baseY = core[core.length - 1][1]; const drop = f.lip - baseY; if (drop < 5) continue; const N = Math.round(Math.min(54, 16 + drop * 0.9));
+      const core = march(f.s, f.lip, Math.min(rock(f.s, f.lip - 0.8, mid), mid + 2.5)); baseY = core[core.length - 1][1]; const drop = f.lip - baseY; if (drop < 5) continue; const N = Math.round(Math.min(40, 12 + drop * 0.7));
       const layers = f.tier === 1 && f.w > 4 ? 4 : f.w > 3 ? 4 : f.w > 1.5 ? 3 : 2;
       for (let i = 0; i <= M; i++) { const a = i / M * 2 - 1, s = f.s + a * f.w, path = march(s, f.lip, Math.min(rock(s, f.lip - 0.8, 1e4), mid + 2.5)), col = []; for (let j = 0; j <= N; j++) { const t = j / N, y = f.lip - drop * (0.5 * t + 0.5 * t * t), k = Math.max(0, Math.min(path.length - 1, (f.lip - y) / 0.4)), k0 = Math.floor(k), k1 = Math.min(path.length - 1, k0 + 1); col.push(lerp(path[k0][0], path[k1][0], k - k0)); } cols.push(col); }
       for (let j = 0; j <= N; j++) { const h = Math.round(half), lim = 2.6 * f.w / M + 0.25; for (let i = h + 1; i <= M; i++) cols[i][j] = Math.max(cols[i - 1][j] - lim, Math.min(cols[i - 1][j] + lim, cols[i][j])); for (let i = h - 1; i >= 0; i--) cols[i][j] = Math.max(cols[i + 1][j] - lim, Math.min(cols[i + 1][j] + lim, cols[i][j])); }

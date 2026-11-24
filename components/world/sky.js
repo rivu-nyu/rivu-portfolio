@@ -13,6 +13,7 @@ export function createSky(u) {
       void main(){ vec3 d = normalize(vD); vec3 c = skyGrad(d); float s = max(dot(d, uSunDir), 0.);
         c += (1. - uHigh) * uSunCol * mix(5., 2.2, uNight) * smoothstep(.99935, .9997, s);
         if (d.y > mix(0., -.05, uHigh)) {
+          if (uNight + uHigh > .01) {
           // stars in three sizes with their own colour and twinkle, thicker along the Milky Way
           vec3 mw = normalize(vec3(.52, .62, -.59)); float band0 = dot(d, mw); float milky = exp(-band0 * band0 * 26.); float dust = fbm3(d * 5.5 + 3.), dust2 = fbm3(d * 14.);
           float mk = milky * smoothstep(.30, .72, dust * .7 + dust2 * .35); float lane = smoothstep(.50, .62, fbm3(d * 8. + 11.)) * exp(-band0 * band0 * 160.);
@@ -21,6 +22,8 @@ export function createSky(u) {
             float core = smoothstep(.20, .0, rad) + (k == 0 ? .35 * exp(-rad * 15.) * smoothstep(.25, .08, rad) : 0.); c += uNight * on * core * tw * tint * (k == 0 ? 1.5 : k == 1 ? 1.1 : .75) * (1. + .9 * uHigh) * smoothstep(mix(.0, -.04, uHigh), mix(.16, .02, uHigh), d.y) * (1. - lane * .7); }
           c += uNight * uHigh * (mk * mix(vec3(.16,.19,.30), vec3(.36,.28,.31), dust2) * 1.05 * (1. - lane * .8)) * smoothstep(.0, .2, d.y);
           { float tt = uTime * .13, id = floor(tt), fr = fract(tt) * 7.; if (fr < 1. && uHigh > .5) { vec3 a0 = normalize(vec3(sin(id * 4.1), .35 + .3 * hash2(vec2(id, 2.)), cos(id * 2.7))), dv = normalize(vec3(cos(id * 3.3), -.45, sin(id * 1.9))); vec3 hd = normalize(a0 + dv * fr * .5); vec3 rel = d - hd; float al = dot(rel, -dv), pr = length(rel + dv * al); c += vec3(1.6,1.8,2.2) * smoothstep(.0025, .0, pr) * smoothstep(.16, .0, al) * step(0., al) * (1. - fr); } }
+          }
+          if (uHigh < .99) {
           vec2 p = d.xz / (max(d.y, 0.) + .16); vec2 sd = normalize(uSunDir.xz + 1e-4);
           float cl = cloud(p), lit = cloud(p + sd * .10), lit2 = cloud(p + sd * .24);
           float cov = .74 - uCloud * .42, k = (1. - uHigh) * smoothstep(cov, cov + .20, cl) * smoothstep(.0, .16, d.y);
@@ -31,13 +34,14 @@ export function createSky(u) {
           float band = au <= 0. ? 0. : fbm2(vec2(p.x * 1.1 + sin(p.y + uTime * .05) * .6, uTime * .05));
           float curt = smoothstep(.14, .0, abs(band - .48)) * n2(vec2(atan(d.x, d.z) * 34., uTime * .25)) * smoothstep(.06,.28,d.y) * smoothstep(.85,.35,d.y);
           c += au * curt * mix(vec3(.05,.75,.42), vec3(.42,.15,.75), smoothstep(.2,.6,d.y)) * 1.1;
+          }
         }
         if (uAurora > .01 && d.y > .015) {
           vec3 acc = vec3(0.); float jit = hash2(gl_FragCoord.xy + fract(uTime) * 61.);
-          for (int i = 0; i < 30; i++) { float fi = (float(i) + jit) * .6, h = 1. + fi * .021 + fi * fi * .0011; vec2 p = d.xz * (2.1 * h / (d.y * 1.5 + .26)); p += vec2(uTime * .012, -uTime * .006);
+          for (int i = 0; i < 20; i++) { float fi = (float(i) + jit) * .9, h = 1. + fi * .021 + fi * fi * .0011; vec2 p = d.xz * (2.1 * h / (d.y * 1.5 + .26)); p += vec2(uTime * .012, -uTime * .006);
             vec2 w = vec2(tnS(p * .55 + 2.3 + uTime * .015), tnS(p * .55 + 7.1 - uTime * .012)) - .48; vec2 q = p * vec2(.62, .36) + w * 1.5; float n = tnS(q * .62); float ridge = smoothstep(.020, .0, abs(n - .48)); float ridge2 = smoothstep(.016, .0, abs(tnS(q * .5 + 9.) - .46)) * .75;
             float rays = .12 + 1.5 * pow(tnS(vec2(p.x * 5. + w.x * 6., p.y * 5.) / h + uTime * .10), 1.8); float v = (ridge + ridge2) * rays; float t = fi / 18.;
-            vec3 hue = mix(vec3(.06, 1., .45), vec3(.10,.75,.80), smoothstep(.12,.45,t)); hue = mix(hue, vec3(.55,.16,.85), smoothstep(.4,.85,t)); acc += hue * v * exp(-t * 2.6) * smoothstep(0., .05, t + .02); }
+            vec3 hue = mix(vec3(.06, 1., .45), vec3(.10,.75,.80), smoothstep(.12,.45,t)); hue = mix(hue, vec3(.55,.16,.85), smoothstep(.4,.85,t)); acc += 1.5 * hue * v * exp(-t * 2.6) * smoothstep(0., .05, t + .02); }
           c += acc * .46 * mix(.10, .40, smoothstep(.40, .60, tnS(d.xz * 1.6 / (d.y + .4) + 5.))) * uAurora * smoothstep(.015, .16, d.y);
           c += vec3(.006,.035,.022) * uAurora * exp(-d.y * 4.);
         }

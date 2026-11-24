@@ -63,7 +63,7 @@ export function createFlora(u, low, onLoad) {
     const g = new THREE.InstancedBufferGeometry(), P = new Float32Array(items.length * 4), Q = new Float32Array(items.length * 4); g.setAttribute('position', quad); g.setIndex([0, 1, 2, 0, 2, 3]);
     const box = new THREE.Box3(), v = new THREE.Vector3(); let mh = 0; items.forEach((t, i) => { P.set([t[0], t[1], t[2], t[3]], i * 4); Q.set([t[4], t[5], t[6], t[7] || 0], i * 4); box.expandByPoint(v.set(t[0], t[1], t[2])); mh = Math.max(mh, t[3]); });
     g.setAttribute('aP', new THREE.InstancedBufferAttribute(P, 4)); g.setAttribute('aQ', new THREE.InstancedBufferAttribute(Q, 4)); g.instanceCount = items.length; g.boundingSphere = box.getBoundingSphere(new THREE.Sphere()); g.boundingSphere.radius += mh * 1.3;
-    const { mat, depth } = get(kind, opt.isle), m = new THREE.Mesh(g, mat); m.userData.box = box; if (opt.shadow !== false) { m.userData.depthMat = depth; if (!opt.isle) m.layers.enable(1); } return m;
+    const { mat, depth } = get(kind, opt.isle), m = new THREE.Mesh(g, mat); m.userData.box = box; if (opt.shadow !== false && kind !== 'fern') { m.userData.depthMat = depth; if (!opt.isle) m.layers.enable(1); } return m;
   };
   return { mesh, get, left: () => left, dispose: () => { dead = true; textures.forEach((t) => t.dispose()); Object.values(mats).forEach((m) => m.depth.dispose()); } };
 }
@@ -185,17 +185,17 @@ export function createRocks(u, low, perches, onLoad) {
   for (let i = 0; i < 40; i++) { const z = FALL.z + (R() - 0.5) * 52, inner = i < 18; let x = FALL.x - 22 + R() * 30; if (inner) { for (x = FALL.x - 4; x < FALL.x + 40 && fallCliff(x, z) < -2.5 - R() * 3; x += 0.5); } else if (Math.abs(z - FALL.z) < 9) continue; const sc = inner ? 0.8 + R() * 1.9 : 0.5 + R() * R() * 2; put(x, height(x, z) + sc * 0.35, z, sc); }
   // boulders the gathering streams run between
   for (let i = 0; i < (low ? 90 : 320); i++) { const f = FALLS.filter((q) => q.tier === 2)[Math.floor(R() * 7)], t = R(), e = lerp(66, 22, t), s = lerp(f.s, f.s * 0.16, t * t * (3 - 2 * t)) + (R() < 0.5 ? -1 : 1) * (1.2 + R() * R() * 9), z = FALL.z + s, x = FALL.x + e + 19 * Math.sqrt(Math.max(0, 1 - (s / 46) ** 2)) - 2, sc = 0.5 + R() * R() * 2.2; put(x, height(x, z) + sc * 0.2, z, sc); }
-  loadMeshes('/models/rocks.bin').then((geos) => { if (dead) return geos.forEach((g) => g.dispose());
-    lists.forEach((l, i) => { if (!l.length) return; l.sort((a, b) => b.elements[14] - a.elements[14]); const C = 28, sz = Math.ceil(l.length / C); for (let c = 0; c < C; c++) { const part = l.slice(c * sz, (c + 1) * sz); if (!part.length) continue; const m = new THREE.InstancedMesh(geos[i], mat, part.length); part.forEach((x, k) => m.setMatrixAt(k, x)); m.computeBoundingSphere(); m.userData.z = [part[0].elements[14], part[part.length - 1].elements[14], i > 5 ? 190 : 480]; group.add(m); } });
+  loadMeshes('/models/rocks.bin').then((geos) => { if (dead) return geos.forEach((g) => g.dispose()); group.userData.geos = geos;
+    lists.forEach((l, i) => { if (!l.length) return; l.sort((a, b) => b.elements[14] - a.elements[14]); const C = 28, sz = Math.ceil(l.length / C); for (let c = 0; c < C; c++) { const part = l.slice(c * sz, (c + 1) * sz); if (!part.length) continue; const m = new THREE.InstancedMesh(geos[i], mat, part.length); part.forEach((x, k) => m.setMatrixAt(k, x)); m.computeBoundingSphere(); m.renderOrder = -1; m.userData.z = [part[0].elements[14], part[part.length - 1].elements[14], i > 5 ? 190 : 420]; m.userData.small = i > 5; if (i < 6) m.userData.lod = [geos[i], geos[i + 6], 70]; group.add(m); } });
     // the crags the phoenix lands on: a stack of scanned boulders whose highest point is exactly where it stands
     const G = geos[3], bp = G.attributes.position, stacks = [[], []]; let top = -1, ti = 0; for (let i = 0; i < bp.count; i++) if (bp.getY(i) > top) { top = bp.getY(i); ti = i; }
     perches.forEach((k, i) => { if (k.noRock && !k.rock) return; const a = i * 2.4, sc = k.rock || Math.max(3.1, (k.y - k.ground + 1) / (top + 0.55)), tx = bp.getX(ti) * sc * 1.18, tz = bp.getZ(ti) * sc * 1.18, ca = Math.cos(a), sa = Math.sin(a); const x = k.x - (ca * tx + sa * tz), z = k.z - (-sa * tx + ca * tz), y = k.y - top * sc;
       stacks[0].push(new THREE.Matrix4().compose(p.set(x, y, z), q.setFromEuler(e.set(0, a, 0)), s.set(sc * 1.18, sc, sc * 1.18)));
       for (let j = 0; j < 4; j++) { const b = a + j * 1.57 + R(), r = sc * (0.85 + R() * 0.5), s2 = sc * (0.3 + R() * 0.35), xx = x + Math.cos(b) * r, zz = z + Math.sin(b) * r; stacks[1].push(new THREE.Matrix4().compose(p.set(xx, (k.rock ? y - sc * 0.4 : height(xx, zz) + s2 * 0.15), zz), q.setFromEuler(e.set(R() * 0.5, R() * 6.28, R() * 0.5)), s.set(s2, s2, s2))); } });
-    stacks.forEach((l, i) => { l.sort((a, b) => b.elements[14] - a.elements[14]); const C = 12, sz = Math.ceil(l.length / C); for (let c = 0; c < C; c++) { const part = l.slice(c * sz, (c + 1) * sz); if (!part.length) continue; const m = new THREE.InstancedMesh(geos[i ? 6 : 3], mat, part.length); part.forEach((x, k) => m.setMatrixAt(k, x)); m.computeBoundingSphere(); group.add(m); } });
+    stacks.forEach((l, i) => { l.sort((a, b) => b.elements[14] - a.elements[14]); const C = 12, sz = Math.ceil(l.length / C); for (let c = 0; c < C; c++) { const part = l.slice(c * sz, (c + 1) * sz); if (!part.length) continue; const m = new THREE.InstancedMesh(geos[i ? 6 : 3], mat, part.length); part.forEach((x, k) => m.setMatrixAt(k, x)); m.computeBoundingSphere(); m.renderOrder = -1; m.userData.z = [part[0].elements[14], part[part.length - 1].elements[14], part.some((x) => x.elements[13] > 300) ? 1e6 : 420]; if (!i) m.userData.lod = [geos[3], geos[9], 60]; group.add(m); } });
     group.userData.ready?.(); onLoad();
   }).catch(onLoad);
-  group.userData.lod = (z) => { for (const m of group.children) if (m.userData.z) { const [a, b, far] = m.userData.z; m.visible = (z > a ? z - a : z < b ? b - z : 0) < far; } };
-  group.userData.stop = () => { dead = true; };
+  group.userData.lod = (z) => { for (const m of group.children) if (m.userData.z) { const [a, b, far] = m.userData.z, d = z > a ? z - a : z < b ? b - z : 0, l = m.userData.lod; m.visible = d < far; if (l) m.geometry = d < l[2] ? l[0] : l[1]; } };
+  group.userData.stop = () => { dead = true; group.userData.geos?.forEach((g) => g.dispose()); };
   return group;
 }

@@ -21,18 +21,19 @@ export function createFire(u, N) {
         gl_Position = projectionMatrix * m;
         if (aInf.x < 0. || vA < 0. || vA >= 1. || -m.z < 2.5) gl_Position = vec4(2., 2., 2., 1.); }`,
     fragmentShader: GLSL + /* glsl */ `varying float vA, vK, vS; varying vec2 vQ;
-      void main(){ float r = length(vQ); if (r > 1.) discard;
+      void main(){ float r = dot(vQ, vQ); if (r > 1.) discard; r = sqrt(r);
         if (vK > .5) { gl_FragColor = vec4(vec3(2.6, .8, .14) * smoothstep(1., 0., r) * (1. - vA), 1.); return; }
         vec2 q = vQ; q.x += (n2(vec2(q.y * 2.2 - vA * 4., vS * 60.)) - .5) * .7;
         float body = 1. - length(q * vec2(1.5 + q.y * .5, .95));
-        float n = fbm2(q * vec2(2.6, 1.5) + vec2(vS * 50., -vA * 3.5));
+        vec2 fq = q * vec2(2.6, 1.5) + vec2(vS * 50., -vA * 3.5); float n = n2(fq) * .56 + n2(fq * 2.1 + 3.7) * .28 + n2(fq * 4.3 + 9.1) * .14;
         float k = smoothstep(.12 + vA * .3, .62 + vA * .2, body * .75 + n * .55 - .12) * smoothstep(1., .6, r);
         float t = clamp(vA * 1.15 + (1. - k) * .45, 0., 1.);
         vec3 c = mix(vec3(1.5,.80,.24), vec3(1.05,.26,.025), smoothstep(0.,.4,t)); c = mix(c, vec3(.32,.028,.006), smoothstep(.35,.9,t));
         gl_FragColor = vec4(c * k * smoothstep(1., .5, vA) * smoothstep(0., .08, vA) * .28, 1.); }` });
   const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = 5;
-  let i = 0;
+  let i = 0, dirty = 0;
   return { mesh,
-    emit(p, v, life, size, kind = 0) { pos.setXYZ(i, p.x, p.y, p.z); vel.setXYZ(i, v.x, v.y, v.z); inf.setXYZW(i, u.uTime.value, life, size, kind); i = (i + 1) % N; },
-    flush() { pos.needsUpdate = vel.needsUpdate = inf.needsUpdate = true; } };
+    emit(p, v, life, size, kind = 0) { pos.setXYZ(i, p.x, p.y, p.z); vel.setXYZ(i, v.x, v.y, v.z); inf.setXYZW(i, u.uTime.value, life, size, kind); i = (i + 1) % N; dirty++; },
+    // upload only the particles born this frame, so the GPU never waits for the whole buffer
+    flush() { if (!dirty) return; const n = Math.min(dirty, N), a = (i - n + N) % N; for (const t of [pos, vel, inf]) { t.clearUpdateRanges(); const k = t.itemSize; if (a + n <= N) t.addUpdateRange(a * k, n * k); else { t.addUpdateRange(a * k, (N - a) * k); t.addUpdateRange(0, (n - (N - a)) * k); } t.needsUpdate = true; } dirty = 0; } };
 }

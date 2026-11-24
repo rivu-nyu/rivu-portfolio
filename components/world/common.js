@@ -16,7 +16,7 @@ export const shared = () => ({
   uPhx: { value: new THREE.Vector3() },
   uPhxI: { value: 1 }, uAurora: { value: 0 }, uHigh: { value: 0 }, uSwirl: { value: 0 }, uEmber: { value: 0 },
   uShadow: { value: null }, uShadowM: { value: new THREE.Matrix4() },
-  uHMap: { value: null }, uSunMap: { value: null }, tNoise: { value: noiseTexture() },
+  uHMap: { value: null }, uSunMap: { value: null }, tNoise: { value: noiseTexture() }, tVal: { value: valueTexture() },
   tRock: { value: null }, tRockN: { value: null }, tCliff: { value: null }, tCliffN: { value: null }, tBasalt: { value: null }, tGrass: { value: null }, tSand: { value: null }, tBark: { value: null }, tLeafy: { value: null }, tForest: { value: null }, tForestN: { value: null }, tBoulder: { value: null }, tBoulderN: { value: null }, tCastle: { value: null }, tCastleN: { value: null }, tSlate: { value: null },
 });
 
@@ -26,11 +26,10 @@ uniform float uEmber; uniform float uTime, uDen, uNight, uCloud, uPhxI, uAurora,
 uniform vec3 uSunDir, uSunCol, uSky, uGround, uFog, uZenith, uHorizon, uPhx;
 float hash2(vec2 p){ vec3 q = fract(vec3(p.xyx) * .1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float hash3(vec3 p){ p = fract(p * .1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
-float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
-  return mix(mix(hash2(i), hash2(i+vec2(1,0)), f.x), mix(hash2(i+vec2(0,1)), hash2(i+vec2(1,1)), f.x), f.y); }
-float n3(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
-  return mix(mix(mix(hash3(i),hash3(i+vec3(1,0,0)),f.x),mix(hash3(i+vec3(0,1,0)),hash3(i+vec3(1,1,0)),f.x),f.y),
-             mix(mix(hash3(i+vec3(0,0,1)),hash3(i+vec3(1,0,1)),f.x),mix(hash3(i+vec3(0,1,1)),hash3(i+vec3(1,1,1)),f.x),f.y),f.z); }
+uniform highp sampler2D tVal;
+// value noise from one texture fetch; the second channel holds the next z slice for the 3D version
+float n2(vec2 p){ vec2 i = floor(p), f = p - i; f = f*f*(3.-2.*f); return textureLod(tVal, (i + f + .5) / 256., 0.).r; }
+float n3(vec3 p){ vec3 i = floor(p), f = p - i; f = f*f*(3.-2.*f); vec2 v = textureLod(tVal, (i.xy + vec2(37., 17.) * i.z + f.xy + .5) / 256., 0.).rg; return mix(v.r, v.g, f.z); }
 float fbm2(vec2 p){ float a=.5, s=0.; for(int i=0;i<5;i++){ s+=a*n2(p); p=mat2(1.6,1.2,-1.2,1.6)*p; a*=.5; } return s; }
 float fbm3(vec3 p){ float a=.5, s=0.; for(int i=0;i<4;i++){ s+=a*n3(p); p=p*2.03+7.1; a*=.5; } return s; }
 float bump(float u, float c, float hw, float e){ return smoothstep(c-hw-e, c-hw, u) * (1. - smoothstep(c+hw, c+hw+e, u)); }
@@ -56,6 +55,12 @@ vec3 phxLight(vec3 wp, vec3 n){
   return vec3(1., .36, .08) * uPhxI * 260. / (d2 + 160.) * (.35 + .65 * max(dot(n, normalize(l)), 0.));
 }
 `;
+
+function valueTexture() {
+  const N = 256, d = new Uint16Array(N * N * 4), r = rng(9241), v = Float32Array.from({ length: N * N }, () => r()), H = THREE.DataUtils.toHalfFloat;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const k = (y * N + x) * 4; d[k] = H(v[y * N + x]); d[k + 1] = H(v[((y + 17) % N) * N + (x + 37) % N]); d[k + 3] = H(1); }
+  const t = new THREE.DataTexture(d, N, N, THREE.RGBAFormat, THREE.HalfFloatType); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; return t;
+}
 
 // Tileable fractal noise, baked once so ground shading costs a texture fetch instead of dozens of hashes.
 function noiseTexture() {

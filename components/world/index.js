@@ -1,9 +1,5 @@
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
-import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { shared, HMAP, lerp, smooth, noise } from './common';
 import { STOPS, zOf, at } from './stops';
 import { createTerrain, createWater, createPerches, center, height } from './landscape';
@@ -26,7 +22,7 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.24;
   const u = shared(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(42, 1, 0.5, 2600);
   const phx = createPhoenix(u), fire = createFire(u, low ? 1300 : 3000);
-  phx.group.rotation.order = 'YXZ';
+  phx.group.rotation.order = 'YXZ'; phx.group.traverse((o) => { if (o.isMesh && !o.material.transparent) o.renderOrder = -3; });
   const kick = () => request(), flora = createFlora(u, low, kick);
   const terrain = createTerrain(u, low), perches = createPerches(), cherry = createCherry(u, low, perches, flora, kick), isles = createIsles(u, low, perches, flora), falls = createWaterfall(u, low, kick), trees = createTrees(flora, low, perches), rocks = createRocks(u, low, perches, kick), bird = createBehaviour(perches);
   const water = createWater(u), grass = createGrass(u, low, kick), mist = createMist(u, low), valley = [terrain, water, trees, rocks, grass, mist];
@@ -43,11 +39,11 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   for (const [k, n] of Object.entries(tex)) { u[k].value = k.endsWith('N') ? flat : placeholder; loader.load(`/textures/${n}.jpg`, (t) => { if (dead) return t.dispose(); t.wrapS = t.wrapT = THREE.RepeatWrapping; if (n.startsWith('boulder')) t.flipY = false; t.anisotropy = low ? 2 : 4; if (!k.endsWith('N')) t.colorSpace = THREE.SRGBColorSpace; u[k].value = t; loaded.push(t); texLeft--; request(); }, undefined, () => { texLeft--; request(); }); }
 
   // sun shadow map around the bird
-  const SM = low ? 1024 : 2048, shadowRT = new THREE.WebGLRenderTarget(SM, SM, { depthTexture: new THREE.DepthTexture(SM, SM, THREE.UnsignedIntType) }), sun = new THREE.OrthographicCamera(-62, 62, 62, -62, 1, 420); sun.layers.set(1);
+  const SM = low ? 1024 : 1536, shadowRT = new THREE.WebGLRenderTarget(SM, SM, { depthTexture: new THREE.DepthTexture(SM, SM, THREE.UnsignedIntType) }), sun = new THREE.OrthographicCamera(-62, 62, 62, -62, 1, 420); sun.layers.set(1);
   shadowRT.depthTexture.minFilter = shadowRT.depthTexture.magFilter = THREE.NearestFilter; u.uShadow.value = shadowRT.depthTexture;
   const rockDepth = new THREE.ShaderMaterial({ side: THREE.DoubleSide, vertexShader: 'void main(){ gl_Position = projectionMatrix * viewMatrix * instanceMatrix * vec4(position, 1.); }', fragmentShader: 'void main(){ gl_FragColor = vec4(1.); }' });
   let casters = []; const gather = () => { casters = []; scene.traverse((o) => { if (o.userData.depthMat && o.layers.isEnabled(1)) casters.push(o); }); };
-  const rocksIn = () => { rocks.children.forEach((r) => { r.userData.depthMat = rockDepth; r.layers.enable(1); }); gather(); }; rocks.userData.ready = rocksIn; cherry.userData.ready = gather; gather();
+  const rocksIn = () => { rocks.children.forEach((r) => { if (r.userData.small) return; r.userData.depthMat = rockDepth; r.layers.enable(1); }); gather(); }; rocks.userData.ready = rocksIn; cherry.userData.ready = gather; gather();
   // mountain-scale shadows: one small map over the whole valley, refreshed only when the sun moves
   const sunRT = new THREE.WebGLRenderTarget(192, 900, { depthBuffer: false }); u.uSunMap.value = sunRT.texture;
   const sunQuad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: u, vertexShader: 'varying vec2 vU; void main(){ vU = uv; gl_Position = vec4(position.xy, 0., 1.); }',
@@ -66,25 +62,31 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   let shadowTick = 0; const bornAt = performance.now();
   const sv = new THREE.Vector4();
 
-  // scene goes to one multisampled buffer, resolved exactly once; bloom and tone mapping run on plain buffers
-  const msaa = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4, resolveDepthBuffer: false });
-  const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false })), bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.5, 1.15);
-  class ScenePass extends Pass {
-    constructor() { super(); this.needsSwap = false; this.copy = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: msaa.texture } }, depthTest: false, depthWrite: false, vertexShader: 'varying vec2 v; void main(){ v = uv; gl_Position = vec4(position.xy, 0., 1.); }', fragmentShader: 'varying vec2 v; uniform sampler2D t; void main(){ gl_FragColor = vec4(texture2D(t, v).rgb, 1.); }' })); }
-    setSize(w, h) { msaa.setSize(w, h); }
-    render(r, _w, read) { r.setRenderTarget(msaa); r.clear(); r.render(scene, camera); r.setRenderTarget(read); this.copy.render(r); }
-    dispose() { msaa.dispose(); this.copy.material.dispose(); this.copy.dispose(); }
-  }
-  composer.addPass(new ScenePass()); composer.addPass(bloom);
+  // scene goes to one multisampled buffer, resolved exactly once; a small blur pyramid makes the glow, and a single
+  // full-screen pass adds it, the light shafts, the film grade, tone mapping and the output curve
+  const half = { type: THREE.HalfFloatType, depthBuffer: false }, msaa = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4, resolveDepthBuffer: false });
+  const LV = 6, down = [...Array(LV)].map(() => new THREE.WebGLRenderTarget(4, 4, half)), up = [...Array(LV - 1)].map(() => new THREE.WebGLRenderTarget(4, 4, half)), FS = 'varying vec2 v; void main(){ v = uv; gl_Position = vec4(position.xy, 0., 1.); }';
+  const pass = (uniforms, f) => new FullScreenQuad(new THREE.ShaderMaterial({ uniforms, depthTest: false, depthWrite: false, vertexShader: FS, fragmentShader: 'varying vec2 v; ' + f }));
+  const pDown = pass({ t: { value: null }, px: { value: new THREE.Vector2() }, bright: { value: 0 } }, 'uniform sampler2D t; uniform vec2 px; uniform float bright; void main(){ vec3 c = (texture2D(t, v + px * vec2(-1.,-1.)).rgb + texture2D(t, v + px * vec2(1.,-1.)).rgb + texture2D(t, v + px * vec2(-1.,1.)).rgb + texture2D(t, v + px).rgb) * .125 + texture2D(t, v).rgb * .5; c = min(c, vec3(24.)); if (bright > .5) c *= smoothstep(1.15, 1.16, dot(c, vec3(.299,.587,.114))); gl_FragColor = vec4(c, 1.); }');
+  const pUp = pass({ t: { value: null }, b: { value: null }, px: { value: new THREE.Vector2() } }, 'uniform sampler2D t, b; uniform vec2 px; void main(){ vec3 c = texture2D(b, v).rgb * .25 + (texture2D(b, v + vec2(px.x, 0.)).rgb + texture2D(b, v - vec2(px.x, 0.)).rgb + texture2D(b, v + vec2(0., px.y)).rgb + texture2D(b, v - vec2(0., px.y)).rgb) * .125 + (texture2D(b, v + px).rgb + texture2D(b, v - px).rgb + texture2D(b, v + vec2(px.x, -px.y)).rgb + texture2D(b, v + vec2(-px.x, px.y)).rgb) * .0625; gl_FragColor = vec4(texture2D(t, v).rgb + c, 1.); }');
   // light shafts from the sun and a gentle film grade
-  const grade = new ShaderPass({ uniforms: { tDiffuse: { value: null }, uSun: { value: new THREE.Vector3() }, uCol: { value: new THREE.Color() }, uAsp: { value: 1 }, uVeil: { value: 0 }, uT: { value: 0 }, uRush: { value: 0 }, tN: { value: u.tNoise.value }, uVeilC: { value: new THREE.Color() } }, vertexShader: 'varying vec2 v; void main(){ v = uv; gl_Position = vec4(position.xy, 0., 1.); }',
-    fragmentShader: `varying vec2 v; uniform sampler2D tDiffuse; uniform vec3 uSun, uCol; uniform float uAsp, uVeil, uT, uRush; uniform sampler2D tN; uniform vec3 uVeilC;
-      void main(){ vec3 c = texture2D(tDiffuse, v).rgb;
-        if (uSun.z > .01) { vec2 d = (uSun.xy - v) / 14. * .82; float j = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(.0671, .00584)))); vec2 p = v + d * j; float s = 0., w = 1.; for (int i = 0; i < 14; i++) { if (p.x > 0. && p.x < 1. && p.y > 0. && p.y < 1.) { vec3 t = texture2D(tDiffuse, p).rgb; s += smoothstep(.55, 1.5, min(t.b * 1.35, min(t.r, t.g))) * w; } p += d; w *= .94; } float r = length((uSun.xy - v) * vec2(uAsp, 1.)); c += uCol * s * .0105 * uSun.z * smoothstep(1.5, .1, r); }
+  const grade = new FullScreenQuad(new THREE.ShaderMaterial({ depthTest: false, depthWrite: false, uniforms: { tDiffuse: { value: msaa.texture }, tGlow: { value: up[0].texture }, tSmall: { value: down[0].texture }, uSun: { value: new THREE.Vector3() }, uCol: { value: new THREE.Color() }, uAsp: { value: 1 }, uPx: { value: new THREE.Vector2(1, 1) }, uVeil: { value: 0 }, uT: { value: 0 }, uRush: { value: 0 }, tN: { value: u.tNoise.value }, uVeilC: { value: new THREE.Color() } }, vertexShader: 'varying vec2 v; void main(){ v = uv; gl_Position = vec4(position.xy, 0., 1.); }',
+    fragmentShader: `varying vec2 v; uniform sampler2D tDiffuse, tGlow, tSmall; uniform vec3 uSun, uCol; uniform vec2 uPx; uniform float uAsp, uVeil, uT, uRush; uniform sampler2D tN; uniform vec3 uVeilC;
+      void main(){ vec3 c0 = texture2D(tDiffuse, v).rgb, nN = texture2D(tDiffuse, v + vec2(0., uPx.y)).rgb, nS = texture2D(tDiffuse, v - vec2(0., uPx.y)).rgb, nE = texture2D(tDiffuse, v + vec2(uPx.x, 0.)).rgb, nW = texture2D(tDiffuse, v - vec2(uPx.x, 0.)).rgb;
+        vec3 c = clamp(c0 + (c0 - (nN + nS + nE + nW) * .25) * .42, min(c0, min(min(nN, nS), min(nE, nW))), max(c0, max(max(nN, nS), max(nE, nW)))); c += texture2D(tGlow, v).rgb * .18;
+        if (uSun.z > .01) { vec2 d = (uSun.xy - v) / 14. * .82; float j = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(.0671, .00584)))); vec2 p = v + d * j; float s = 0., w = 1.; for (int i = 0; i < 14; i++) { if (p.x > 0. && p.x < 1. && p.y > 0. && p.y < 1.) { vec3 t = texture2D(tSmall, p).rgb; s += smoothstep(.55, 1.5, min(t.b * 1.35, min(t.r, t.g))) * w; } p += d; w *= .94; } float r = length((uSun.xy - v) * vec2(uAsp, 1.)); c += uCol * s * .0105 * uSun.z * smoothstep(1.5, .1, r); }
         if (uVeil > .004) { vec2 q = (v - .5) * vec2(uAsp, 1.); float n1 = texture2D(tN, q * .10 + vec2(uT * .004, uRush * .5)).r, n2 = texture2D(tN, q * .27 + vec2(-uT * .006, uRush * 1.1) + n1 * .12).r, n3 = texture2D(tN, q * vec2(.6, .34) + vec2(.3, uRush * 1.9)).r; float dn = n1 * .5 + n2 * .32 + n3 * .18; float a = smoothstep(0., 1., uVeil * 1.65 - (1. - smoothstep(.34, .62, dn)) * .62 * (1. - uVeil * .55)); c = mix(c, uVeilC * (.74 + .62 * smoothstep(.36, .62, dn)), clamp(a, 0., 1.)); }
         float l = dot(c, vec3(.2126,.7152,.0722)); c = mix(vec3(l), c, 1.10); c = pow(max(c, 0.), vec3(1.06)) * 1.06; c *= mix(vec3(.985,.995,1.02), vec3(1.02,1.,.975), smoothstep(.05, .9, l));
-        vec2 q = v - .5; c *= 1. - dot(q, q) * .34; gl_FragColor = vec4(c, 1.); }` });
-  composer.addPass(grade); composer.addPass(new OutputPass());
+        vec2 q = v - .5; c *= 1. - dot(q, q) * .34; gl_FragColor = vec4(c, 1.);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }` })); grade.uniforms = grade.material.uniforms;
+  const composer = { setSize(w, h) { msaa.setSize(w, h); for (let i = 0; i < LV; i++) { const k = 2 << i; down[i].setSize(Math.max(2, Math.round(w / k)), Math.max(2, Math.round(h / k))); if (i < LV - 1) up[i].setSize(down[i].width, down[i].height); } },
+    render() { renderer.setRenderTarget(msaa); renderer.clear(); renderer.render(scene, camera); const D = pDown.material.uniforms, U = pUp.material.uniforms;
+      for (let i = 0; i < LV; i++) { const src = i ? down[i - 1] : msaa; D.t.value = src.texture; D.px.value.set(1 / src.width, 1 / src.height); D.bright.value = i === 1 ? 1 : 0; renderer.setRenderTarget(down[i]); pDown.render(renderer); }
+      for (let i = LV - 2; i >= 1; i--) { const b = i === LV - 2 ? down[LV - 1] : up[i + 1]; U.t.value = down[i].texture; U.b.value = b.texture; U.px.value.set(1 / b.width, 1 / b.height); renderer.setRenderTarget(up[i]); pUp.render(renderer); }
+      grade.uniforms.tGlow.value = up[1].texture; renderer.setRenderTarget(null); grade.render(renderer); },
+    dispose() { [msaa, ...down, ...up].forEach((t) => t.dispose()); [pDown, pUp, grade].forEach((q) => { q.material.dispose(); q.dispose(); }); } };
 
   // palette, parsed once; sun directions become world-space yaws
   const pal = STOPS.map((s, i) => { const C = (c) => new THREE.Color(c), yaw = heading(zOf(i)) + s.az * RAD + s.sun[0] * RAD, e = s.sun[1] * RAD;
@@ -103,17 +105,17 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   }
   function resize() {
     W = el.clientWidth; H = el.clientHeight; if (!W || !H) return;
-    renderer.setPixelRatio(dpr); renderer.setSize(W, H); composer.setPixelRatio(dpr); composer.setSize(W, H); bloom.setSize(W * dpr * 0.5, H * dpr * 0.5);
+    renderer.setPixelRatio(dpr); renderer.setSize(W, H); composer.setSize(Math.round(W * dpr), Math.round(H * dpr)); grade.uniforms.uPx.value.set(1 / (W * dpr), 1 / (H * dpr));
     camera.aspect = W / H; measure();
   }
 
   function spawn(dt) {
     const rest = bird.rest;
-    acc += dt * (low ? 260 : 620) * (0.6 + speed * 0.4 + think * 0.8) * (1 - rest * 0.72); const back = c.set(0, 0, -1).applyQuaternion(phx.group.quaternion);
+    acc += dt * (low ? 240 : 430) * (0.6 + speed * 0.4 + think * 0.8) * (1 - rest * 0.72); const back = c.set(0, 0, -1).applyQuaternion(phx.group.quaternion);
     while (acc > 1) { acc--; const r = Math.random();
       if (r < 0.42 && bird.fold < 0.6) phx.wingPoint(Math.random() < 0.5 ? 1 : -1, 2.6 + Math.random() * 3.1, -0.5 - Math.random() * 1.5, a); else phx.tailPoint(a);
       const spark = Math.random() < 0.22 + rest * 0.5; b.copy(back).multiplyScalar((3 + Math.random() * 4) * (1 - rest)).add({ x: (Math.random() - 0.5) * 0.9, y: (Math.random() - 0.3) * 0.9, z: (Math.random() - 0.5) * 0.9 });
-      fire.emit(a, b, spark ? 1 + Math.random() * 1.6 : 0.3 + Math.random() * 0.45, spark ? 0.06 : 0.16 + Math.random() * 0.26, spark ? 1 : 0); }
+      fire.emit(a, b, spark ? 1 + Math.random() * 1.6 : 0.3 + Math.random() * 0.45, spark ? 0.06 : 0.18 + Math.random() * 0.28, spark ? 1 : 0); }
     if (bird.eat > 0.2 && Math.random() < dt * (6 + bird.peck * 50)) { a.copy(coals.position); fire.emit(a, b.set((Math.random() - 0.5) * 1.5, 1 + Math.random() * 1.4, (Math.random() - 0.5) * 1.5), 0.8, 0.05, 1); }
     if (breath > 0.15) { phx.beak(a); phx.forward(b); const n = Math.ceil(dt * (low ? 90 : 170));
       for (let i = 0; i < n; i++) { const sp = Math.random() < 0.14, s = 10 + Math.random() * 6; c.copy(b).multiplyScalar(s).add({ x: (Math.random() - 0.5) * 2.2, y: (Math.random() - 0.5) * 2.2, z: (Math.random() - 0.5) * 2.2 });
@@ -159,9 +161,9 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
     const floor = height(camPos.x, camPos.z) + 2.2; camPos.y = Math.max(camPos.y, floor, 2); camera.position.copy(camPos); camera.lookAt(a.copy(focus));
     const sx = tall ? 0 : sxRaw * (W / H < 1.2 ? 0.6 : 1), gorge = Math.max(0, 1 - Math.abs(P - at('labs')) / 0.62), sy = tall ? -0.26 : mixN('sy') - lowK * restK * 0.05 + smooth(0, 0.55, gorge) * (1 - restK) * 0.09;
     camera.setViewOffset(W, H, -sx * W, -sy * H, W, H);
-    trees.userData.lod(camPos.z); rocks.userData.lod(camPos.z);
+    trees.userData.lod(camPos.z); rocks.userData.lod(camPos.z); terrain.userData.lod(camPos.z);
     // above the clouds the valley is hidden, and far-off set pieces are skipped
-    const high = smooth(330, 390, camPos.y); u.uHigh.value = high; for (const o of valley) o.visible = camPos.y < 395; isles.visible = camPos.y > 312; cherry.visible = Math.abs(camPos.z) < 420 && camPos.y < 200; falls.visible = Math.abs(camPos.z + 258) < 1000 && camPos.y < 200; smoke.visible = camPos.y < 395;
+    const high = smooth(330, 390, camPos.y); u.uHigh.value = high; for (const o of valley) o.visible = camPos.y < 395; isles.visible = camPos.y > 312; cherry.visible = Math.abs(camPos.z) < 420 && camPos.y < 200; falls.visible = Math.abs(camPos.z + 258) < 1000 && camPos.y < 200; if (falls.visible) { const near = Math.abs(camPos.z + 258) < 260; for (const o of falls.children) if (o.renderOrder >= 2) o.visible = near; } smoke.visible = camPos.y < 395;
     u.uEmber.value = smooth(at('interests') - 0.2, at('interests') + 0.15, P) * 0.22 + smooth(at('interests') + 0.05, at('interests') + 0.6, P) * 0.78 * (1 - smooth(LAB - 0.15, LAB, P) * 0.9);
     grade.uniforms.uT.value = time; grade.uniforms.uRush.value += (bird.pos.y - rushY) * 0.012; rushY = bird.pos.y;
     grade.uniforms.uVeil.value = Math.exp(-Math.pow((camPos.y - 345) / 66, 2)); grade.uniforms.uVeilC.value.copy(u.uFog.value).lerp(u.uSky.value, 0.4).multiplyScalar(0.9); grade.uniforms.uVeilC.value.r += u.uEmber.value * 0.16; grade.uniforms.uVeilC.value.g += u.uEmber.value * 0.035;
@@ -176,10 +178,10 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   function draw(now) {
     frame = 0; if (dead) return;
     const raw = (now - last) / 1000, dt = Math.min(0.05, Math.max(0.001, raw)); last = now; if (!reduced) time += dt;
-    update(dt, now); if (isles.visible) isles.userData.shadow(renderer, pal[at('interests')].sunDir); renderSun(); if (falls.visible) falls.userData.shadow(renderer, u.uSunDir.value); if ((shadowTick ^= 1) || reduced) renderShadow(phxPos); composer.render();
+    update(dt, now); if (isles.visible) isles.userData.shadow(renderer, pal[at('interests')].sunDir); renderSun(); if (falls.visible) falls.userData.shadow(renderer, u.uSunDir.value); if (reduced || (shadowTick = (shadowTick + 1) % (bird.state === 'fly' || bird.state === 'perch' ? 3 : 2)) === 0) renderShadow(phxPos); composer.render();
     if (texLeft <= 0 && flora.left() <= 0) el.classList.add('ready');
     // step resolution down on slow machines
-    if (!reduced && !document.hidden && raw < 0.5 && now > bornAt + 3000) { frames++; if (raw > 0.030) slow++; if (frames >= 90) { if (slow > 55 && dpr > 0.9) { dpr = Math.max(0.9, dpr - 0.2); resize(); } frames = slow = 0; } }
+    if (!reduced && !document.hidden && raw < 0.5 && now > bornAt + 3000) { frames++; if (raw > 0.0235) slow++; if (frames >= 60) { if (slow > 40 && dpr > 0.85) { dpr = Math.max(0.85, dpr - 0.13); resize(); } frames = slow = 0; } }
     if (!reduced && !document.hidden) request();
   }
   function request() { if (!frame && !dead) frame = requestAnimationFrame(draw); }
@@ -193,5 +195,5 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   el.appendChild(renderer.domElement); resize(); request();
 
   return () => { dead = true; cancelAnimationFrame(frame); ro.disconnect(); window.removeEventListener('scroll', onScroll); window.removeEventListener('pointermove', onPointer); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('phoenix', onPhoenix);
-    scene.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); }); shadowRT.dispose(); sunRT.dispose(); sunQuad.material.dispose(); sunQuad.dispose(); loaded.forEach((t) => t.dispose()); u.uHMap.value?.dispose(); casters.forEach((c) => c.userData.depthMat.dispose()); flora.dispose(); rocks.userData.stop(); cherry.userData.stop(); grass.userData.stop(); isles.userData.stop(); falls.userData.stop(); composer.passes.forEach((p) => p.dispose?.()); composer.dispose(); renderer.dispose(); renderer.domElement.remove(); el.classList.remove('ready'); };
+    scene.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); }); shadowRT.dispose(); sunRT.dispose(); sunQuad.material.dispose(); sunQuad.dispose(); loaded.forEach((t) => t.dispose()); u.uHMap.value?.dispose(); casters.forEach((c) => c.userData.depthMat.dispose()); flora.dispose(); rocks.userData.stop(); cherry.userData.stop(); grass.userData.stop(); isles.userData.stop(); falls.userData.stop(); composer.dispose(); renderer.dispose(); renderer.domElement.remove(); el.classList.remove('ready'); };
 }
