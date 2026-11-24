@@ -59,16 +59,17 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="research" className="stop low">
-          <h2 className="onscene">Publications</h2>
-          <div className="papers">
+        <section id="research" className="stop right">
+          <div className="panel pubs">
+            <h2>Publications</h2>
             {papers.map((p) => (
-              <article className="panel paper" key={p.title}>
+              <article className="paper" key={p.title}>
                 <img src={p.image} alt={p.alt} width="1280" height="720" loading="lazy" decoding="async" />
-                <span className="year">{p.year}</span>
-                <h3>{p.title}</h3>
-                <p>{p.venue}</p>
-                <a className="textlink" href={`https://scholar.google.com/scholar?q=${encodeURIComponent(p.title)}`} target="_blank" rel="noreferrer">Find publication <ArrowUpRight size={15} /></a>
+                <div>
+                  <h3>{p.title}</h3>
+                  <p><span className="year">{p.year}</span> {p.venue}</p>
+                  <a className="textlink" href={`https://scholar.google.com/scholar?q=${encodeURIComponent(p.title)}`} target="_blank" rel="noreferrer" aria-label={`Find publication: ${p.title}`}>Find publication <ArrowUpRight size={15} /></a>
+                </div>
               </article>
             ))}
           </div>

@@ -10,7 +10,7 @@ export const STOPS = [
     sun: [24, 34], sunCol: '#ffe9c6', sunI: 3.5, zenith: '#2c66ab', horizon: '#c2daec', sky: '#9cbbe0', ground: '#5a5c45', fog: '#b4cbdc', den: 0.00075, night: 0, cloud: 0.45 },
   { id: 'work', place: 'Red Canyon', az: -38, dist: 18, up: 2, sx: 0.25, sy: -0.02, alt: 16, hover: 0,
     sun: [38, 30], sunCol: '#ffd9ab', sunI: 4.2, zenith: '#3f72b0', horizon: '#e9d2b8', sky: '#aab6cf', ground: '#7d6450', fog: '#cdb5a2', den: 0.0012, night: 0, cloud: 0.35 },
-  { id: 'research', place: 'Mirror Lake', az: 18, dist: 18, up: 2.6, sx: 0, sy: -0.14, alt: 13, hover: 0,
+  { id: 'research', place: 'Mirror Lake', az: 18, dist: 18, up: 2.6, sx: -0.23, sy: 0, alt: 13, hover: 0,
     sun: [-14, 8], sunCol: '#ffa066', sunI: 3.6, zenith: '#3a4d8c', horizon: '#f0a07c', sky: '#8d90bd', ground: '#4d4350', fog: '#b08c98', den: 0.0012, night: 0, cloud: 0.5 },
   { id: 'skills', place: 'Snow Ridge', az: -58, dist: 18, up: 3, sx: -0.24, sy: 0, alt: 16, hover: 0,
     sun: [58, 26], sunCol: '#ffd2a0', sunI: 2.1, zenith: '#2f66ad', horizon: '#d9c3b8', sky: '#6f95d0', ground: '#5d6c94', fog: '#b9c6dc', den: 0.0011, night: 0, cloud: 0.4 },
