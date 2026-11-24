@@ -1,10 +1,8 @@
 import World from '../components/World';
 import Lab from '../components/Lab';
 import Twin from '../components/Twin';
-import { experience, papers, skills } from '../components/data';
+import { experience, papers, skills, teaching } from '../components/data';
 import { ArrowDown, ArrowUpRight, Flame, Github, Linkedin, Mail } from 'lucide-react';
-
-const stats = [['Up to 20%', 'higher inference throughput'], ['12%', 'lower VRAM consumption'], ['91%', 'multilingual classification accuracy'], ['2,000+', 'user queries supported']];
 
 export default function Home() {
   return (
@@ -13,7 +11,7 @@ export default function Home() {
       <header>
         <nav className="nav" aria-label="Main">
           <a className="brand" href="#home">rivu<span>.</span></a>
-          <div className="navlinks"><a href="#about">About</a><a href="#work">Work</a><a href="#research">Research</a><a href="#skills">Skills</a><a href="#lab">Lab</a></div>
+          <div className="navlinks"><a href="#about">About</a><a href="#work">Work</a><a href="#research">Publications</a><a href="#skills">Skills</a><a href="#lab">Lab</a></div>
           <a className="navcta" href="#twin"><Flame size={15} /> Ask the phoenix</a>
         </nav>
       </header>
@@ -53,15 +51,20 @@ export default function Home() {
                 <p className="result">{e.result}</p>
               </article>
             ))}
-            <div className="panel statgrid">{stats.map(([n, t]) => <div key={n}><div className="metric">{n}</div><p>{t}</p></div>)}</div>
+            <article className="panel job" id="teaching">
+              <div className="jobhead"><h3>Teaching experience</h3></div>
+              <p className="role">Teaching Assistant</p>
+              <dl className="teaching">{teaching.map(([k, v]) => <div key={k}><dt>{k}</dt><dd><ul>{v.map((c) => <li key={c}>{c}</li>)}</ul></dd></div>)}</dl>
+            </article>
           </div>
         </section>
 
         <section id="research" className="stop low">
-          <h2 className="onscene">Questions worth exploring</h2>
+          <h2 className="onscene">Publications</h2>
           <div className="papers">
             {papers.map((p) => (
               <article className="panel paper" key={p.title}>
+                <img src={p.image} alt={p.alt} width="1280" height="720" loading="lazy" decoding="async" />
                 <span className="year">{p.year}</span>
                 <h3>{p.title}</h3>
                 <p>{p.venue}</p>
