@@ -44,7 +44,7 @@ export function createCherry(u, low, perches, flora, onLoad) {
     if (y < 0.9 || y > 66 || (z < -112 && side > 0) || R() < smooth(80, 225, Math.abs(z + 4)) * 0.85) continue; if (Math.hypot(height(x + 2, z) - y, height(x, z + 2) - y) > 2.3) continue;
     { const q = 9.5 * sc; if ([[q, 0], [-q, 0], [0, q], [0, -q]].some(([a, b]) => height(x + a, z + b) - y > 6.5 * sc)) continue; }
     if (trees.some(([a, b, s]) => Math.hypot(a - x, b - z) < 8.6 * (sc + s))) continue; trees.push([x, z, sc]); n++;
-    const turn = R() * 6.28; if (!low && near.length < 3 && Math.abs(z + 14) < 34 && d < edge + 9) near.push(M(x, y - 0.4, z, sc, turn)); else far.push([x, y - 0.3, z, 19.47 * sc, turn, 1, R()]); }
+    const turn = R() * 6.28; if (!low && side < 0 && near.length < 3 && Math.abs(z + 14) < 34 && d < edge + 9) near.push(M(x, y - 0.4, z, sc, turn)); else far.push([x, y - 0.3, z, 19.47 * sc, turn, 1, R()]); }
   if (far.length) { const C = 60, bins = new Map(); far.forEach((t) => { const k = Math.floor(t[2] / C); bins.set(k, [...(bins.get(k) || []), t]); }); for (const l of bins.values()) group.add(flora.mesh('cherry', l)); }
   // the nearest trees are real geometry: scanned limbs, every flower cluster its own card
   let dead = false; loadMeshes('/models/cherry.bin').then(([trunk, branch, pts]) => { if (dead) return; const inst = (g, mat, dm) => { const m = new THREE.InstancedMesh(g, mat, near.length); near.forEach((x, i) => m.setMatrixAt(i, x)); m.computeBoundingSphere(); m.userData.depthMat = dm; m.layers.enable(1); group.add(m); }; inst(trunk, bark, barkD); inst(branch, bark, barkD);

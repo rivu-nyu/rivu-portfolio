@@ -1,4 +1,5 @@
 import World from '../components/World';
+import Music from '../components/Music';
 import Lab from '../components/Lab';
 import Twin from '../components/Twin';
 import { scholar, education, interests, research, experience, papers, skills, teaching } from '../components/data';
@@ -19,7 +20,7 @@ export default function Home() {
         <nav className="nav" aria-label="Main">
           <a className="brand" href="#home">rivu<span>.</span></a>
           <div className="navlinks"><a href="#about">About</a><a href="#labs">Research</a><a href="#work">Work</a><a href="#research">Publications</a><a href="#skills">Skills</a><a href="#lab">Lab</a></div>
-          <a className="navcta" href="#twin"><Flame size={15} /> Ask the phoenix</a>
+          <div className="navend"><Music /><a className="navcta" href="#twin"><Flame size={15} /> Ask the phoenix</a></div>
         </nav>
       </header>
 
@@ -128,6 +129,8 @@ export default function Home() {
             <Twin />
           </div>
         </section>
+
+        <div className="ashes" aria-hidden="true" />
 
         <section id="contact" className="stop contact">
           <div>

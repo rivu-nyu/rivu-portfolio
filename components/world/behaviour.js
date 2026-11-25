@@ -56,7 +56,7 @@ let travel = 0;
 
     if (S0 === 'fly') {
       pos.copy(F);
-      if (landable && idle > 0.75 && arc < 0.02 && hover < 0.05) {
+      if (landable && !out.hold && idle > 0.75 && arc < 0.02 && hover < 0.05) {
         let best = null, bd = 34; const tag = STOPS[Math.round(P)]?.tag; for (const p of perches) { if ((p.tag || undefined) !== tag || (tag && Math.abs(P - Math.round(P)) > 0.2)) continue; const d = Math.abs(p.z - (z - dir * (STOPS[Math.round(P)]?.hold ? 1 : 9))); if (d < bd) { bd = d; best = p; } }
         if (best && best.cine && !seen) { startCine(best, camYaw, faceSign); } else if (best) { out.perch = best; perchAt.set(best.x, best.y + 1.36, best.z); p0.copy(pos); const dist = p0.distanceTo(perchAt); T = Math.min(4, Math.max(2.3, dist / 9));
           m0.set(Math.sin(out.yaw), 0, Math.cos(out.yaw)).multiplyScalar(dist * 1.1); m1.copy(perchAt).sub(p0).setY(0).multiplyScalar(0.5); m1.y = -1.5; perchYaw = camYaw + faceSign * (best.face ?? 0.85); out.state = 'land'; t = 0; }

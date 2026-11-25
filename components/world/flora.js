@@ -104,8 +104,15 @@ export function createTrees(flora, low, perches) {
       const stand = noise(x * 0.026 + 7, z * 0.026) + 0.5 * noise(x * 0.075, z * 0.075 + 3) + 0.44 - smooth(95, 138, y) * 0.6 - smooth(0.9, 1.35, slope) * 0.3; if (stand < R() * 0.42) continue;
       const edge = smooth(0, 0.5, stand), c = R(), kind = c < 0.52 ? 'spruce' : c < 0.84 ? 'spruce2' : 'fir', h = (3.2 + R() * R() * 5.6) * (0.72 + 0.5 * edge) * (1 - 0.35 * smooth(80, 138, y)) * (kind === 'fir' ? 1.25 : 1), r = h * (kind === 'fir' ? 0.08 : 0.125); if (!free(x, z, r * 0.72)) continue; claim(x, z, r * 0.72);
       lists[kind].push([x, y - 0.1 - slope * h * 0.05, z, h, R() * 6.28, 0.78 + R() * 0.3, R(), 0.45 + 0.55 * edge]); k++; } }
+  // the same standing forest over every other mountainside, thinning toward the treeline and around bare rock
+  { const want = low ? 4500 : 24000; let k = 0; for (let t = 0; t < want * 8 && k < want; t++) { const z = 1150 - R() * 3500, U = -z / STOP_GAP; if (Math.abs(z - FALL.z) < 215 && R() < 0.6) continue; const x = center(z) + (R() < 0.5 ? -1 : 1) * (40 + R() * 190), o = x - center(z); if (Math.abs(z - FALL.z) < 190 && o > 20) continue; if (Math.hypot(x - CONE.x, z - CONE.z) < 190) continue;
+      const canyon = bump(U, 2.12, 0.5, 0.42), volc = bump(U, 5.5, 0.7, 0.4), pink = bump(U, 0, 0.18, 0.4); if (R() < canyon * 1.02 + volc * 1.05) continue; const y = height(x, z); if (y < 7 || y > 118) continue; if (pink > 0.3 && y < 24) continue;
+      const slope = Math.hypot(height(x + 2, z) - y, height(x, z + 2) - y) / 2; if (slope > 1.5) continue;
+      const stand = noise(x * 0.018 + 7, z * 0.018) + 0.5 * noise(x * 0.06, z * 0.06 + 3) + 0.5 - smooth(78, 118, y) * 0.75 - smooth(0.95, 1.5, slope) * 0.45; if (stand < R() * 0.4) continue;
+      const edge = smooth(0, 0.5, stand), c = R(), kind = c < 0.48 ? 'spruce' : c < 0.78 ? 'spruce2' : 'fir', h = (5.5 + R() * R() * 8.5) * (0.75 + 0.45 * edge) * (1 - 0.4 * smooth(70, 118, y)) * (kind === 'fir' ? 1.3 : 1), r = h * (kind === 'fir' ? 0.08 : 0.125); if (Math.abs(o) < 11.5 + KINDS[kind].w * h * 0.55 || perches.some((q) => Math.abs(q.z - z) < 17 && Math.hypot(q.x - x, q.z - z) < 15) || !free(x, z, r * 0.75)) continue; claim(x, z, r * 0.75);
+      lists[kind].push([x, y - 0.1 - slope * h * 0.06, z, h, R() * 6.28, 0.8 + R() * 0.3, R(), 0.35 + 0.5 * edge]); k++; } }
   // thickets and ferns near the water and under the trees
-  const under = low ? 1500 : 6500; let m = 0;
+  const under = low ? 2200 : 11000; let m = 0;
   for (let t = 0; t < under * 8 && m < under; t++) {
     const gorge = t < (low ? 500 : 2200), z = gorge ? FALL.z + (R() - 0.5) * 190 : 1100 - R() * 3500, U = -z / STOP_GAP, rw = riverWidth(z), x = center(z) + (R() < 0.5 ? -1 : 1) * (rw + 2 + R() * R() * 62), y = height(x, z); const gz = Math.abs(z - FALL.z) < 135 && x > center(z) + 4; if (y < (gz ? 1.1 : 1.5) || y > 34 || (gz ? Math.hypot(x - FALL.x, z - FALL.z) < 26 || (x > center(z) + 24 && fallCliff(x, z) > -2) : blocked(x, z))) continue;
     if (Math.hypot(height(x + 1, z) - y, height(x, z + 1) - y) > 0.85) continue;
@@ -117,14 +124,14 @@ export function createTrees(flora, low, perches) {
   const group = new THREE.Group(), chunks = [];
   for (const [kind, l] of Object.entries(lists)) { const small = kind === 'bush' || kind === 'fern', C = small ? 40 : 44, bins = new Map(); for (const t of l) { const b = Math.floor((1300 - t[2]) / (4200 / C)) * 2 + (t[0] > center(t[2]) ? 1 : 0); if (!bins.has(b)) bins.set(b, []); bins.get(b).push(t); }
     for (const part of bins.values()) { // front to back order inside a chunk is unknown, so nearest-to-path first is the best guess
-      part.sort((a, b) => Math.abs(a[0] - center(a[2])) - Math.abs(b[0] - center(b[2]))); const k = flora.mesh(kind, part); group.add(k); chunks.push({ m: k, z0: k.userData.box.max.z, z1: k.userData.box.min.z, far: small ? (low ? 90 : 190) : low ? 560 : 900 }); } }
+      part.sort((a, b) => Math.abs(a[0] - center(a[2])) - Math.abs(b[0] - center(b[2]))); const k = flora.mesh(kind, part); group.add(k); chunks.push({ m: k, z0: k.userData.box.max.z, z1: k.userData.box.min.z, far: small ? (low ? 90 : 190) : low ? 520 : 720 }); } }
   group.userData.lod = (z) => { for (const c of chunks) { const d = z > c.z0 ? z - c.z0 : z < c.z1 ? c.z1 - z : 0; c.m.visible = d < c.far; c.m.renderOrder = d * 0.0005; } }; // nearest first, so hidden leaves cost nothing
   return group;
 }
 
 // Tufts follow the camera: a patch that wraps around it and sits on the height map.
 export function createGrass(u, low, onLoad) {
-  const n = low ? 2600 : 11000, size = low ? 46 : 78, R = rng(3), geo = new THREE.InstancedBufferGeometry(); geo.instanceCount = n;
+  const n = low ? 4200 : 18000, size = low ? 46 : 84, R = rng(3), geo = new THREE.InstancedBufferGeometry(); geo.instanceCount = n;
   const pos = [], uv = [], idx = []; for (let k = 0; k < 2; k++) { const a = k * 1.57, dx = Math.cos(a), dz = Math.sin(a), b = pos.length / 3; for (const [x, y] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) { pos.push(dx * x * 0.8, y, dz * x * 0.8); uv.push(x * 0.5 + 0.5, y); } idx.push(b, b + 1, b + 2, b, b + 2, b + 3); }
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
   const off = new Float32Array(n * 4); for (let i = 0; i < n; i++) off.set([R() * size, R() * size, R() * 6.28, R()], i * 4); geo.setAttribute('aO', new THREE.InstancedBufferAttribute(off, 4));
@@ -133,8 +140,8 @@ export function createGrass(u, low, onLoad) {
     vertexShader: GLSL + HMAP + /* glsl */ `attribute vec4 aO; varying vec3 vW; varying vec2 vU; varying float vY, vR, vSun;
       void main(){ vec2 f = cameraPosition.xz - vec2(viewMatrix[0][2], viewMatrix[2][2]) * ${(size * 0.38).toFixed(1)}; vec2 c = mod(aO.xy - f, ${size.toFixed(1)}) - ${(size / 2).toFixed(1)} + f; vW = vec3(c.x, hAt(c), c.y);
         ${BIOME} float sl = length(vec2(hAt(c + vec2(1.5, 0.)), hAt(c + vec2(0., 1.5))) - vW.y) / 1.5;
-        float patchy = smoothstep(.24, .5, fbm2(c * .09) + aO.w * .18 - .06), edge = smoothstep(${(size / 2).toFixed(1)}, ${(size * 0.36).toFixed(1)}, length(c - f));
-        float k = patchy * edge * smoothstep(1.2, 2.0, vW.y) * smoothstep(.95, .5, sl) * (1. - volc) * (1. - snowy * .8) * mix(1., step(.70, aO.w), canyon);
+        float patchy = smoothstep(.04, .34, fbm2(c * .09) + aO.w * .18 - .06), edge = smoothstep(${(size / 2).toFixed(1)}, ${(size * 0.36).toFixed(1)}, length(c - f));
+        float k = patchy * edge * smoothstep(.9, 1.7, vW.y) * smoothstep(1.1, .6, sl) * (1. - volc) * (1. - snowy * .8) * mix(1., step(.70, aO.w), canyon);
         float s = k * (.35 + .75 * fract(aO.w * 13.7)); float ca = cos(aO.z), sa = sin(aO.z); vec3 p = position; p.xz = mat2(ca, -sa, sa, ca) * p.xz; p.y -= .06;
         p.xz += vec2(.16, .08) * p.y * p.y * (sin(uTime * 2.1 + c.x * .4 + c.y * .3) + .4); vW += p * s * vec3(1.15, 1., 1.15); vY = position.y; vR = aO.w; vU = vec2((uv.x + floor(fract(aO.w * 31.) * 4.)) * .25, uv.y * .98); vSun = sunVis(vec3(c.x, vW.y + .5, c.y), uSunDir);
         gl_Position = k < .05 ? vec4(2.,2.,2.,1.) : projectionMatrix * viewMatrix * vec4(vW, 1.); }`,

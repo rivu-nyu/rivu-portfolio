@@ -14,10 +14,11 @@ export const shared = () => ({
   uNight: { value: 0 },
   uCloud: { value: 0.5 },
   uPhx: { value: new THREE.Vector3() },
-  uPhxI: { value: 1 }, uAurora: { value: 0 }, uHigh: { value: 0 }, uSwirl: { value: 0 }, uEmber: { value: 0 },
+  uPhxI: { value: 1 }, uAurora: { value: 0 }, uHigh: { value: 0 }, uSwirl: { value: 0 }, uBurn: { value: new THREE.Vector4() }, uBurnO: { value: new THREE.Vector3() }, uEmber: { value: 0 },
   uShadow: { value: null }, uShadowM: { value: new THREE.Matrix4() },
   uHMap: { value: null }, uSunMap: { value: null }, tNoise: { value: noiseTexture() }, tVal: { value: valueTexture() },
-  tRock: { value: null }, tRockN: { value: null }, tCliff: { value: null }, tCliffN: { value: null }, tBasalt: { value: null }, tGrass: { value: null }, tSand: { value: null }, tBark: { value: null }, tLeafy: { value: null }, tForest: { value: null }, tForestN: { value: null }, tBoulder: { value: null }, tBoulderN: { value: null }, tCastle: { value: null }, tCastleN: { value: null }, tSlate: { value: null },
+  tSkyA: { value: null }, tSkyB: { value: null }, uPhA: { value: new THREE.Vector4(0, 1, 0, 0) }, uPhB: { value: new THREE.Vector4(0, 1, 0, 0) }, uPhTA: { value: new THREE.Vector3(1, 1, 1) }, uPhTB: { value: new THREE.Vector3(1, 1, 1) }, uPhMix: { value: 0 },
+  tRock: { value: null }, tRockN: { value: null }, tCliff: { value: null }, tCliffN: { value: null }, tBasalt: { value: null }, tGrass: { value: null }, tSand: { value: null }, tBark: { value: null }, tLeafy: { value: null }, tForest: { value: null }, tForestN: { value: null }, tBoulder: { value: null }, tBoulderN: { value: null }, tCastle: { value: null }, tCastleN: { value: null }, tSlate: { value: null }, tAer: { value: null }, tPeb: { value: null }, tMead: { value: null },
 });
 
 export const GLSL = /* glsl */ `
@@ -42,6 +43,10 @@ vec3 skyGrad(vec3 d){
   c += uSunCol * (.10 * pow(s, 6.) + .22 * pow(s, 48.)) * (1. - .92 * uHigh);
   return c;
 }
+// photographed skies: one for the world being left, one for the world ahead (x: turn, y: sun height warp, z: presence)
+uniform sampler2D tSkyA, tSkyB; uniform vec4 uPhA, uPhB; uniform vec3 uPhTA, uPhTB; uniform float uPhMix;
+vec3 photo(sampler2D t, vec4 p, vec3 tint, vec3 d){ float el = asin(clamp(d.y, .002, 1.)) * .6366198; el = pow(el, p.y); vec3 c = textureLod(t, vec2(fract(p.x - atan(d.x, d.z) * .1591549), el), 0.).rgb; c *= c; c /= max(1.004 - c, .02); float L = dot(c, vec3(.3,.5,.2)); return c * (L > .7 ? (.7 + .9 * (1. - exp(-(L - .7) * .9))) / L : 1.) * tint; }
+vec3 skyAt(vec3 d){ vec3 g = skyGrad(d), a = g, b = g; if (uPhMix < 1. && uPhA.z > 0.) a = mix(g, photo(tSkyA, uPhA, uPhTA, d), uPhA.z); if (uPhMix > 0. && uPhB.z > 0.) b = mix(g, photo(tSkyB, uPhB, uPhTB, d), uPhB.z); return mix(a, b, uPhMix); }
 vec3 fogged(vec3 c, vec3 wp){
   vec3 v = wp - cameraPosition; float d = length(v); v /= d;
   float hf = exp(-max(wp.y, 0.) * .0055);

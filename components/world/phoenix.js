@@ -55,6 +55,13 @@ class Feathers {
     a('position', this.p, 3); a('normal', this.n, 3); a('aF', this.f, 4); a('aT', this.t, 2); a('aRoot', this.r, 4); g.setIndex(this.i); return g; }
 }
 
+// charring, crumbling to ash, and gathering again out of light: x char, y how much is gone, z rebirth
+const BURN = /* glsl */ `
+uniform vec4 uBurn; uniform vec3 uBurnO;
+vec3 burn(vec3 c, vec3 w){ if (uBurn.x + uBurn.y <= 0.) return c; vec3 l = w - uPhx; float n = fbm3(l * 1.5) * .7 + n3(l * 7.) * .3, t = n * .62 + clamp(length(w - uBurnO) / 9., 0., 1.) * .40; float f = uBurn.y * 1.12 - .06; if (t < f) discard;
+  float ch = smoothstep(0., .16, uBurn.x * 1.2 - t), e = smoothstep(.11, .0, t - f) * smoothstep(0., .04, uBurn.y); vec3 coal = vec3(.018,.015,.014) + vec3(2.4,.42,.04) * smoothstep(.90, 1., 1. - abs(n3(l * 5.) * .65 + n3(l * 13. + uTime * .2) * .35 - .5) * 2.) * (.35 + .9 * n3(l * 2. + uTime));
+  c = mix(c, coal, ch); float h = fract(l.y * .16 + l.x * .07 + uTime * .1); vec3 dv = mix(vec3(1.,.75,.3), mix(vec3(.9,.25,.8), vec3(.2,.7,1.), smoothstep(.3,.8,h)), smoothstep(.15,.5,h)); c += e * mix(vec3(3.4,.8,.1), vec3(.9,.6,.28) + dv * .9, uBurn.z); c += uBurn.z * (dv * .22 + c * .15) * uBurn.y; return c; }`;
+
 const LIGHT = /* glsl */ `
 vec3 heatRamp(float h){ return mix(mix(vec3(.9,.06,.008), vec3(1.5,.42,.04), smoothstep(0.,.55,h)), vec3(2.4,1.35,.4), smoothstep(.5,1.,h)); }`;
 
@@ -74,7 +81,7 @@ function featherMaterial(u, pose, kind, depth = false) {
           p = tail(p, aF.y * clamp(aT.x / 6., .12, 1.), aF.w);
         #endif
         vF = aF; vT = aT; vec4 w = modelMatrix * vec4(p, 1.); vW = w.xyz; vN = mat3(modelMatrix) * n; gl_Position = projectionMatrix * viewMatrix * w; }`,
-    fragmentShader: GLSL + SHADOW + LIGHT + /* glsl */ `varying vec4 vF; varying vec2 vT; varying vec3 vW, vN; uniform float uHeat;
+    fragmentShader: GLSL + SHADOW + LIGHT + BURN + /* glsl */ `varying vec4 vF; varying vec2 vT; varying vec3 vW, vN; uniform float uHeat;
       void main(){
         float u = vF.x, v = vF.y, hot = floor(vF.z * .5 + .001) * .1, tone = vF.z - hot * 20., seed = vF.w, au = abs(u);
         // aT.y: 0..1 flight-feather asymmetry, <0 pointed hackle, >1.5 loose plume
@@ -142,7 +149,7 @@ function featherMaterial(u, pose, kind, depth = false) {
         float mol = hot * (.32 + 1.15 * max(edge, smoothstep(.55,.95,v)) + .75 * smoothstep(.35,.85,fl)) * (.82 + .18 * sin(uTime * 2.1 + seed * 20.));
         col += heatRamp(clamp(.12 + hot * .26 + fl * .38 + edge * .22, 0., 1.)) * mol * (.34 + .35 * uHeat);
         col += alb * (.03 + .10 * uHeat + .10 * uNight);
-        gl_FragColor = vec4(fogged(col, vW), cov); }`,
+        gl_FragColor = vec4(fogged(burn(col, vW), vW), cov); }`,
   });
   m.alphaToCoverage = !depth; return m;
 }
@@ -150,9 +157,9 @@ function featherMaterial(u, pose, kind, depth = false) {
 function skinMaterial(u, pose, color, { gloss = 0.1, emit = 0, bend = false, tip = color, z = [0, 1] } = {}) {
   return new THREE.ShaderMaterial({ uniforms: { ...u, ...pose, uC: { value: new THREE.Color(color) }, uC2: { value: new THREE.Color(tip) }, uZ: { value: new THREE.Vector2(...z) }, uG: { value: gloss }, uE: { value: emit } }, side: THREE.DoubleSide,
     vertexShader: `uniform float uTime; uniform vec2 uZ; varying float vZ; varying vec3 vW, vN; ${POSE} void main(){ vec3 p = position; vZ = smoothstep(uZ.x, uZ.y, p.z); ${bend ? 'p = neck(p);' : ''} vec4 w = modelMatrix * vec4(p,1.); vW = w.xyz; vN = mat3(modelMatrix) * normal; gl_Position = projectionMatrix * viewMatrix * w; }`,
-    fragmentShader: GLSL + `varying float vZ; varying vec3 vW, vN; uniform vec3 uC, uC2; uniform float uG, uE; void main(){ vec3 N = normalize(vN), V = normalize(cameraPosition - vW); if (dot(N,V) < 0.) N = -N;
+    fragmentShader: GLSL + BURN + `varying float vZ; varying vec3 vW, vN; uniform vec3 uC, uC2; uniform float uG, uE; void main(){ vec3 N = normalize(vN), V = normalize(cameraPosition - vW); if (dot(N,V) < 0.) N = -N;
       vec3 c = mix(uC, uC2, vZ) * (.8 + .3 * n3(vW * 30.)) * (uSunCol * max(dot(N,uSunDir)*.8+.2,0.) + mix(uGround,uSky,N.y*.5+.5) * .8 + vec3(.5,.18,.05));
-      c += (uSunCol * .6 + .5) * uG * pow(max(dot(N, normalize(V+uSunDir)),0.), 40.) + uC * uE; gl_FragColor = vec4(fogged(c, vW), 1.); }` });
+      c += (uSunCol * .6 + .5) * uG * pow(max(dot(N, normalize(V+uSunDir)),0.), 40.) + uC * uE; gl_FragColor = vec4(fogged(burn(c, vW), vW), 1.); }` });
 }
 
 // Elliptical loft through [x,y,z,rx,ry] rings.
@@ -207,7 +214,7 @@ export function createPhoenix(u) {
   const bm = new THREE.Mesh(b.build(), featherMaterial(u, pose, 'BODY')); bm.frustumCulled = false; bm.userData.depthMat = featherMaterial(u, pose, 'BODY', true); bm.layers.enable(1); group.add(bm);
 
   // ---- head (pivots with the neck)
-  const legs = [], head = new THREE.Group(), inner = new THREE.Group(); head.position.copy(PIVOT); inner.position.copy(PIVOT).negate(); head.add(inner); group.add(head);
+  const eyes = [], legs = [], head = new THREE.Group(), inner = new THREE.Group(); head.position.copy(PIVOT); inner.position.copy(PIVOT).negate(); head.add(inner); group.add(head);
   head.rotation.order = 'YXZ';
   const horn = skinMaterial(u, pose, '#7a3c1a', { gloss: 0.6 }), dark = skinMaterial(u, pose, '#2a0a08', { gloss: 0.4 }), beakM = skinMaterial(u, pose, '#8a3d16', { gloss: 1.2, tip: '#160705', z: [2.42, 2.66] }), brow = skinMaterial(u, pose, '#5e0f0a', { gloss: 0.15 }), cere = skinMaterial(u, pose, '#b4561c', { gloss: 0.6 });
   // raptor beak: deep at the base, long flat top line, then a hard hook past the lower jaw
@@ -223,8 +230,8 @@ export function createPhoenix(u) {
   const hc = document.createElement('canvas'); hc.width = hc.height = 64; { const g = hc.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,255,255,.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); } const haloTex = new THREE.CanvasTexture(hc);
   for (const s of [1, -1]) {
     const patch = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 12), dark); patch.scale.set(0.5, 0.6, 0.9); patch.position.set(s * 0.182, 0.803, 2.22); inner.add(patch);
-    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTex, color: new THREE.Color(1.6, 0.7, 0.18), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 })); halo.position.set(s * 0.275, 0.81, 2.265); halo.scale.setScalar(0.34); inner.add(halo);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.076, 24, 18), iris); eye.position.set(s * 0.2, 0.805, 2.235); eye.rotation.y = s * -0.42; inner.add(eye);
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTex, color: new THREE.Color(1.6, 0.7, 0.18), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 })); halo.position.set(s * 0.275, 0.81, 2.265); halo.scale.setScalar(0.34); inner.add(halo); eyes.push(halo);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.076, 24, 18), iris); eye.position.set(s * 0.2, 0.805, 2.235); eye.rotation.y = s * -0.42; inner.add(eye); eyes.push(eye);
     // heavy brow gives the fierce raptor glare
     inner.add(new THREE.Mesh(loft([[s * 0.13, 0.94, 1.98, 0.03, 0.03], [s * 0.225, 0.92, 2.1, 0.055, 0.04], [s * 0.248, 0.884, 2.22, 0.058, 0.036], [s * 0.2, 0.845, 2.32, 0.04, 0.026], [s * 0.13, 0.815, 2.39, 0.01, 0.008]], 12), brow));
     // yellow gape running back under the eye
@@ -263,5 +270,5 @@ export function createPhoenix(u) {
     tailPoint: (out) => group.localToWorld(out.set((R() - 0.5) * 1.4, 0.1, -2.2 - R() * 4)),
     beak: (out) => inner.localToWorld(out.set(0, 0.63, 2.78)),
     forward: (out) => inner.localToWorld(out.set(0, 0.5, 3.95)).sub(inner.localToWorld(local.set(0, 0.5, 2.95))).normalize(),
-    update() { head.rotation.set(pose.uNeck.value, pose.uNeckYaw.value, 0); } };
+    update() { for (const e of eyes) e.visible = u.uBurn.value.y < 0.22; head.rotation.set(pose.uNeck.value, pose.uNeckYaw.value, 0); } };
 }

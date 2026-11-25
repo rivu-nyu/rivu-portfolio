@@ -4,22 +4,25 @@ import { shared, HMAP, lerp, smooth, noise } from './common';
 import { STOPS, zOf, at } from './stops';
 import { createTerrain, createWater, createPerches, center, height } from './landscape';
 import { createFlora, createTrees, createRocks, createGrass } from './flora';
-import { createSky, createMist, createSmoke } from './sky';
+import { createSky, ranges, createMist, createSmoke } from './sky';
 import { createWaterfall, createAir } from './waterfall';
 import { createCherry, createPetals } from './cherry';
 import { createIsles } from './isles';
 import { createBehaviour, heading } from './behaviour';
 import { createPhoenix } from './phoenix';
 import { createFire } from './fire';
+import { createRebirth } from './rebirth';
 
 const LAB = at('lab'), RAD = Math.PI / 180, vec = () => new THREE.Vector3();
+
+export { loadRelief } from './landscape';
 
 export function createWorld(el, { reduced = false, onStop } = {}) {
   let dead = false;
   const small = window.innerWidth < 800, low = small || (navigator.hardwareConcurrency || 8) < 5;
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   let dpr = Math.min(window.devicePixelRatio, low ? 1.1 : 1.25);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.24;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.2;
   const u = shared(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(42, 1, 0.5, 2600);
   const phx = createPhoenix(u), fire = createFire(u, low ? 1300 : 3000);
   phx.group.rotation.order = 'YXZ'; phx.group.traverse((o) => { if (o.isMesh && !o.material.transparent) o.renderOrder = -3; });
@@ -29,12 +32,25 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   const smoke = createSmoke(u);
   scene.add(createSky(u), terrain, water, trees, rocks, grass, mist, smoke, falls, cherry, isles, createPetals(u, low), createAir(u, low), phx.group, fire.mesh);
 
+  const rebirth = createRebirth(u, low, phx, fire, smoke.userData.vent); scene.add(rebirth.group);
+
   // embers the bird feeds on
   const coals = new THREE.Group(); { const g = new THREE.IcosahedronGeometry(0.1, 1), m = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.3, 0.03) }), m2 = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.7, 0.07, 0.01) }); for (let i = 0; i < 7; i++) { const k = new THREE.Mesh(g, i % 2 ? m : m2); k.position.set(Math.sin(i * 2.4) * 0.17 * Math.sqrt(i / 2), 0.07, Math.cos(i * 2.4) * 0.17 * Math.sqrt(i / 2)); k.scale.setScalar(0.65 + (i % 3) * 0.25); coals.add(k); } } scene.add(coals);
 
+  // photographed skies: only the two in use and their neighbours are kept in memory
+  const skies = {}, skyL = new THREE.TextureLoader(), stopRanges = ranges.load(low, kick);
+  function needSkies(i) { const want = new Set([i - 1, i, i + 1, i + 2].map((k) => STOPS[k]?.photo?.[0]).filter(Boolean));
+    for (const n of want) if (!skies[n]) { const s = skies[n] = { t: null, k: 0 }; skyL.load(`/skies/${n}${low ? '-s' : ''}.webp`, (t) => { if (dead || skies[n] !== s) return t.dispose(); t.wrapS = THREE.RepeatWrapping; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; renderer.initTexture(t); s.t = t; s.k = time < 4 || reduced ? 1 : 0; request(); }); }
+    for (const n in skies) if (!want.has(n)) { skies[n].t?.dispose(); delete skies[n]; } }
+  function setSky(A, B, e, dt) {
+    for (const n in skies) if (skies[n].t) skies[n].k = Math.min(1, skies[n].k + dt * 0.8);
+    for (const [s, q] of [[A, 'A'], [B, 'B']]) { const r = s.photo && skies[s.photo[0]], p = u['uPh' + q].value; if (r?.t) { u['tSky' + q].value = r.t; p.set(s.phU, s.phG, r.k, 0); u['uPhT' + q].value.fromArray(s.photo[3]); } else p.z = 0;
+      const g = ranges.uniforms['uRg' + q].value; if (s.range) g.set(s.rgU, s.range[1], s.range[2], 1); else g.w = 0; }
+    u.uPhMix.value = e; }
+
   // scanned surface textures
   const placeholder = new THREE.DataTexture(new Uint8Array([128, 120, 110, 255]), 1, 1), flat = new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1); placeholder.needsUpdate = flat.needsUpdate = true;
-  const loader = new THREE.TextureLoader(), tex = { tRock: 'rock', tRockN: 'rock_n', tCliff: 'cliff', tCliffN: 'cliff_n', tBasalt: 'basalt', tGrass: 'grass', tSand: 'sand', tBark: 'bark', tLeafy: 'leafy', tForest: 'forest', tForestN: 'forest_n', tBoulder: 'boulder', tBoulderN: 'boulder_n', tCastle: 'castle', tCastleN: 'castle_n', tSlate: 'slate' };
+  const loader = new THREE.TextureLoader(), tex = { tRock: 'rock', tRockN: 'rock_n', tCliff: 'cliff', tCliffN: 'cliff_n', tBasalt: 'basalt', tGrass: 'meadow', tSand: 'sand', tBark: 'bark', tLeafy: 'leafy', tForest: 'forest', tForestN: 'forest_n', tBoulder: 'boulder', tBoulderN: 'boulder_n', tCastle: 'castle', tCastleN: 'castle_n', tSlate: 'slate', tAer: 'aerial', tPeb: 'pebbles' };
   let texLeft = Object.keys(tex).length; const loaded = [];
   for (const [k, n] of Object.entries(tex)) { u[k].value = k.endsWith('N') ? flat : placeholder; loader.load(`/textures/${n}.jpg`, (t) => { if (dead) return t.dispose(); t.wrapS = t.wrapT = THREE.RepeatWrapping; if (n.startsWith('boulder')) t.flipY = false; t.anisotropy = low ? 2 : 4; if (!k.endsWith('N')) t.colorSpace = THREE.SRGBColorSpace; u[k].value = t; loaded.push(t); texLeft--; request(); }, undefined, () => { texLeft--; request(); }); }
 
@@ -67,7 +83,7 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   const half = { type: THREE.HalfFloatType, depthBuffer: false }, msaa = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4, resolveDepthBuffer: false });
   const LV = 6, down = [...Array(LV)].map(() => new THREE.WebGLRenderTarget(4, 4, half)), up = [...Array(LV - 1)].map(() => new THREE.WebGLRenderTarget(4, 4, half)), FS = 'varying vec2 v; void main(){ v = uv; gl_Position = vec4(position.xy, 0., 1.); }';
   const pass = (uniforms, f) => new FullScreenQuad(new THREE.ShaderMaterial({ uniforms, depthTest: false, depthWrite: false, vertexShader: FS, fragmentShader: 'varying vec2 v; ' + f }));
-  const pDown = pass({ t: { value: null }, px: { value: new THREE.Vector2() }, bright: { value: 0 } }, 'uniform sampler2D t; uniform vec2 px; uniform float bright; void main(){ vec3 c = (texture2D(t, v + px * vec2(-1.,-1.)).rgb + texture2D(t, v + px * vec2(1.,-1.)).rgb + texture2D(t, v + px * vec2(-1.,1.)).rgb + texture2D(t, v + px).rgb) * .125 + texture2D(t, v).rgb * .5; c = min(c, vec3(24.)); if (bright > .5) c *= smoothstep(1.15, 1.16, dot(c, vec3(.299,.587,.114))); gl_FragColor = vec4(c, 1.); }');
+  const pDown = pass({ t: { value: null }, px: { value: new THREE.Vector2() }, bright: { value: 0 } }, 'uniform sampler2D t; uniform vec2 px; uniform float bright; void main(){ vec3 c = (texture2D(t, v + px * vec2(-1.,-1.)).rgb + texture2D(t, v + px * vec2(1.,-1.)).rgb + texture2D(t, v + px * vec2(-1.,1.)).rgb + texture2D(t, v + px).rgb) * .125 + texture2D(t, v).rgb * .5; c = clamp(c, vec3(0.), vec3(24.)); if (!(c.r + c.g + c.b < 100.)) c = vec3(0.); if (bright > .5) c *= smoothstep(1.15, 1.16, dot(c, vec3(.299,.587,.114))); gl_FragColor = vec4(c, 1.); }');
   const pUp = pass({ t: { value: null }, b: { value: null }, px: { value: new THREE.Vector2() } }, 'uniform sampler2D t, b; uniform vec2 px; void main(){ vec3 c = texture2D(b, v).rgb * .25 + (texture2D(b, v + vec2(px.x, 0.)).rgb + texture2D(b, v - vec2(px.x, 0.)).rgb + texture2D(b, v + vec2(0., px.y)).rgb + texture2D(b, v - vec2(0., px.y)).rgb) * .125 + (texture2D(b, v + px).rgb + texture2D(b, v - px).rgb + texture2D(b, v + vec2(px.x, -px.y)).rgb + texture2D(b, v + vec2(-px.x, px.y)).rgb) * .0625; gl_FragColor = vec4(texture2D(t, v).rgb + c, 1.); }');
   // light shafts from the sun and a gentle film grade
   const grade = new FullScreenQuad(new THREE.ShaderMaterial({ depthTest: false, depthWrite: false, uniforms: { tDiffuse: { value: msaa.texture }, tGlow: { value: up[0].texture }, tSmall: { value: down[0].texture }, uSun: { value: new THREE.Vector3() }, uCol: { value: new THREE.Color() }, uAsp: { value: 1 }, uPx: { value: new THREE.Vector2(1, 1) }, uVeil: { value: 0 }, uT: { value: 0 }, uRush: { value: 0 }, tN: { value: u.tNoise.value }, uVeilC: { value: new THREE.Color() } }, vertexShader: 'varying vec2 v; void main(){ v = uv; gl_Position = vec4(position.xy, 0., 1.); }',
@@ -76,8 +92,8 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
         vec3 c = clamp(c0 + (c0 - (nN + nS + nE + nW) * .25) * .42, min(c0, min(min(nN, nS), min(nE, nW))), max(c0, max(max(nN, nS), max(nE, nW)))); c += texture2D(tGlow, v).rgb * .18;
         if (uSun.z > .01) { vec2 d = (uSun.xy - v) / 14. * .82; float j = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(.0671, .00584)))); vec2 p = v + d * j; float s = 0., w = 1.; for (int i = 0; i < 14; i++) { if (p.x > 0. && p.x < 1. && p.y > 0. && p.y < 1.) { vec3 t = texture2D(tSmall, p).rgb; s += smoothstep(.55, 1.5, min(t.b * 1.35, min(t.r, t.g))) * w; } p += d; w *= .94; } float r = length((uSun.xy - v) * vec2(uAsp, 1.)); c += uCol * s * .0105 * uSun.z * smoothstep(1.5, .1, r); }
         if (uVeil > .004) { vec2 q = (v - .5) * vec2(uAsp, 1.); float n1 = texture2D(tN, q * .10 + vec2(uT * .004, uRush * .5)).r, n2 = texture2D(tN, q * .27 + vec2(-uT * .006, uRush * 1.1) + n1 * .12).r, n3 = texture2D(tN, q * vec2(.6, .34) + vec2(.3, uRush * 1.9)).r; float dn = n1 * .5 + n2 * .32 + n3 * .18; float a = smoothstep(0., 1., uVeil * 1.65 - (1. - smoothstep(.34, .62, dn)) * .62 * (1. - uVeil * .55)); c = mix(c, uVeilC * (.74 + .62 * smoothstep(.36, .62, dn)), clamp(a, 0., 1.)); }
-        float l = dot(c, vec3(.2126,.7152,.0722)); c = mix(vec3(l), c, 1.10); c = pow(max(c, 0.), vec3(1.06)) * 1.06; c *= mix(vec3(.985,.995,1.02), vec3(1.02,1.,.975), smoothstep(.05, .9, l));
-        vec2 q = v - .5; c *= 1. - dot(q, q) * .34; gl_FragColor = vec4(c, 1.);
+        float l = dot(c, vec3(.2126,.7152,.0722)); c = mix(vec3(l), c, mix(.94, 1.10, smoothstep(.05, .5, max(c.r - c.b, 0.) - .15))); c = max(c, 0.); c *= mix(vec3(.985,.995,1.02), vec3(1.02,1.,.975), smoothstep(.05, .9, l));
+        vec2 q = v - .5; c *= 1. - dot(q, q) * .22; gl_FragColor = vec4(c, 1.);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }` })); grade.uniforms = grade.material.uniforms;
@@ -90,8 +106,9 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
 
   // palette, parsed once; sun directions become world-space yaws
   const pal = STOPS.map((s, i) => { const C = (c) => new THREE.Color(c), yaw = heading(zOf(i)) + s.az * RAD + s.sun[0] * RAD, e = s.sun[1] * RAD;
+    const view = heading(zOf(i)) + s.az * RAD, tau = Math.PI * 2; if (s.photo) s = { ...s, phU: s.photo[1] + yaw / tau, phG: Math.log(Math.max(3, s.photo[2]) / 90) / Math.log(s.sun[1] / 90) }; if (s.range) s = { ...s, rgU: s.range[0] / 360 + view / tau };
     return { ...s, sunDir: new THREE.Vector3(Math.sin(yaw) * Math.cos(e), Math.sin(e), Math.cos(yaw) * Math.cos(e)), sunC: C(s.sunCol).multiplyScalar(s.sunI), zenith: C(s.zenith), horizon: C(s.horizon), sky: C(s.sky), ground: C(s.ground), fog: C(s.fog) }; });
-  let targetP = 0, P = -1, W = 1, H = 1, frame = 0, last = performance.now(), time = 0, phase = 0, stop = -1, scrollAt = -1e9, restK = 0, rushY = 0;
+  let targetP = 0, P = -1, W = 1, H = 1, frame = 0, last = performance.now(), time = 0, phase = 0, stop = -1, scrollAt = -1e9, restK = 0, rushY = 0, skyAt = -1;
   const foff = vec(), focus = vec();
   let mx = 0, my = 0, cmx = 0, cmy = 0, breath = 0, breathT = 0, think = 0, mode = 'idle', acc = 0, slow = 0, frames = 0, speed = 0;
   const camPos = vec(), a = vec(), b = vec(), c = vec(), phxPos = vec();
@@ -111,7 +128,7 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
 
   function spawn(dt) {
     const rest = bird.rest;
-    acc += dt * (low ? 240 : 430) * (0.6 + speed * 0.4 + think * 0.8) * (1 - rest * 0.72); const back = c.set(0, 0, -1).applyQuaternion(phx.group.quaternion);
+    acc += dt * rebirth.alive * (low ? 240 : 430) * (0.6 + speed * 0.4 + think * 0.8) * (1 - rest * 0.72); const back = c.set(0, 0, -1).applyQuaternion(phx.group.quaternion);
     while (acc > 1) { acc--; const r = Math.random();
       if (r < 0.42 && bird.fold < 0.6) phx.wingPoint(Math.random() < 0.5 ? 1 : -1, 2.6 + Math.random() * 3.1, -0.5 - Math.random() * 1.5, a); else phx.tailPoint(a);
       const spark = Math.random() < 0.22 + rest * 0.5; b.copy(back).multiplyScalar((3 + Math.random() * 4) * (1 - rest)).add({ x: (Math.random() - 0.5) * 0.9, y: (Math.random() - 0.3) * 0.9, z: (Math.random() - 0.5) * 0.9 });
@@ -130,7 +147,8 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   function update(dt, now) {
     if (P < 0 || reduced) P = targetP; else P += (targetP - P) * (1 - Math.exp(-dt * 1.75 * bird.align()));
     const i = Math.min(STOPS.length - 2, Math.floor(P)), f = P - i, e = f * f * f * (f * (f * 6 - 15) + 10), A = pal[i], B = pal[i + 1], altE = smooth(0, 1, f), mixN = (k) => lerp(A[k], B[k], k === 'alt' ? altE : e);
-    const hover = mixN('hover'), yaw0 = heading(zOf(P)), tall = W / H < 0.8, sxRaw = mixN('sx');
+    const re = reduced ? rebirth : rebirth.plan(P, targetP > P - 0.02, dt); bird.hold = re.on;
+    const hover = mixN('hover') * (1 - Math.min(1, re.q * 6)), yaw0 = heading(zOf(P)), tall = W / H < 0.8, sxRaw = mixN('sx');
     const ang = yaw0 + Math.PI + mixN('az') * RAD + cmx * 0.16, camYaw = Math.atan2(Math.sin(ang), Math.cos(ang));
     if (!reduced) bird.step(dt, time, { P, targetP, alt: mixN('alt'), hover, scrolling: now - scrollAt < 160, camYaw, faceSign: sxRaw >= 0 ? -1 : 1 });
     else { bird.pos.set(center(zOf(P)), mixN('alt'), zOf(P)); bird.base.copy(bird.pos); bird.yaw = yaw0; bird.S = 0; }
@@ -139,18 +157,19 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
     u.uSky.value.copy(A.sky).lerp(B.sky, e); u.uGround.value.copy(A.ground).lerp(B.ground, e); u.uFog.value.copy(A.fog).lerp(B.fog, e); u.uZenith.value.copy(A.zenith).lerp(B.zenith, e); u.uHorizon.value.copy(A.horizon).lerp(B.horizon, e);
     u.uDen.value = mixN('den') * (1 + 0.85 * Math.pow(Math.sin(Math.PI * f), 2) * (1 - smooth(150, 260, mixN('alt')))) * (1 + 1.9 * smooth(60, 190, mixN('alt')) * (1 - smooth(335, 385, mixN('alt')))); u.uNight.value = mixN('night'); u.uAurora.value = lerp(A.aurora || 0, B.aurora || 0, e); u.uCloud.value = mixN('cloud');
 
+    if (skyAt !== i) { skyAt = i; needSkies(i); } setSky(A, B, e, dt);
     // bird
     think = lerp(think, mode === 'thinking' ? 1 : 0, 1 - Math.exp(-dt * 4));
     if (breathT > 0) breathT -= dt; breath = reduced ? 0 : lerp(breath, breathT > 0 || bird.fire ? 1 : 0, 1 - Math.exp(-dt * 5));
     phxPos.copy(bird.pos); phase += dt * (bird.flap + think * 1.5);
-    const bob = bird.amp * 0.22 * (1 - bird.rest) * Math.sin(phase); phx.group.position.copy(phxPos); phx.group.position.y -= bob + bird.crouch + bird.eat * 0.12; phx.group.rotation.set(bird.pitch, bird.yaw, bird.bank);
-    const ps = phx.pose; ps.uPhase.value = reduced ? 0.6 : phase; ps.uAmp.value = bird.amp; ps.uTail.value = bird.tail; ps.uFold.value = bird.fold; ps.uLift.value = bird.lift;
+    const bob = bird.amp * 0.22 * (1 - bird.rest) * Math.sin(phase); phx.group.position.copy(phxPos); phx.group.position.y -= bob + bird.crouch + bird.eat * 0.12; phx.group.position.y -= re.fall * 3.2; phx.group.rotation.set(bird.pitch + re.fall * 0.5 - (re.rise || 0) * 0.75, bird.yaw, bird.bank + re.fall * 0.55 + re.jolt * 0.9); phx.group.visible = !(re.on && u.uBurn.value.y > 0.985);
+    const ps = phx.pose; ps.uPhase.value = reduced ? 0.6 : phase; ps.uAmp.value = lerp(lerp(bird.amp, 0.12, re.fall), 0.34, re.rise || 0); ps.uTail.value = bird.tail + (re.rise || 0) * 0.5; ps.uFold.value = bird.fold; ps.uLift.value = bird.lift + (re.rise || 0) * 0.42 - re.fall * 0.18;
     ps.uNeck.value = bird.neck + hover * (0.62 - breath * 0.12) + think * -0.18; ps.uNeckYaw.value = bird.neckYaw + hover * lerp(Math.sin(time * 0.5) * 0.12 + cmx * 0.35, 1.3, breath);
     ps.uHeat.value = 0.3 + think * 0.9 + breath * 0.9 + (bird.glow || 0) * 1.1; phx.jaw.rotation.x = breath * 0.5 + think * 0.1 + bird.peck * 0.25; phx.mouth.material.opacity = Math.max(breath, think * 0.6); phx.update();
     const stand = Math.max(bird.stand, bird.rest); for (const l of phx.legs) l.rotation.x = lerp(1.42, -bird.pitch - bird.crouch * 0.5, stand);
-    phx.group.updateMatrixWorld(true);
+    phx.group.updateMatrixWorld(true); if (!reduced) { u.uPhx.value.copy(phxPos); re.draw(dt, time, b.set(Math.sin(yaw0), 0, Math.cos(yaw0))); }
     coals.visible = bird.eat > 0.02 && !!bird.perch; if (coals.visible) { coals.position.set(bird.perch.x + Math.sin(bird.yaw) * 0.9, bird.perch.y - 0.2, bird.perch.z + Math.cos(bird.yaw) * 0.9); coals.scale.setScalar(Math.max(0.01, bird.eat)); }
-    u.uPhx.value.copy(phxPos); u.uPhxI.value = ((0.35 + u.uNight.value * 0.75) * (0.9 + 0.1 * Math.sin(time * 7) * Math.sin(time * 4.3)) + think * 0.5) * (1 - bird.rest * 0.75) + breath * 0.8;
+    u.uPhx.value.copy(phxPos); u.uPhxI.value = ((0.35 + u.uNight.value * 0.75) * (0.9 + 0.1 * Math.sin(time * 7) * Math.sin(time * 4.3)) + think * 0.5) * (1 - bird.rest * 0.75) * re.alive + breath * 0.8 + re.glory * 1.6 + re.jolt * 3;
 
     // camera orbits the bird; the view is shifted sideways so panels never cover it
     cmx = lerp(cmx, mx, 1 - Math.exp(-dt * 2.5)); cmy = lerp(cmy, my, 1 - Math.exp(-dt * 2.5));
@@ -158,7 +177,7 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
     a.copy(bird.offset).multiplyScalar(1 - 0.3 * (bird.S || 0)); if (bird.state === 'cine' && bird.perch) { const k = smooth(7, 8.8, bird.cineT || 0); b.set(bird.perch.x, bird.perch.y + 1.5 + 4 * smooth(4.2, 5.6, bird.cineT) * (1 - k), bird.perch.z).sub(bird.base); a.lerp(b, 1 - 0.03 * (1 - k)); } foff.lerp(a, 1 - Math.exp(-dt * 3.2)); focus.copy(bird.base).add(foff);
     const lowK = smooth(0.04, 0.12, -mixN('sy')), dist = mixN('dist') * lerp(1, lerp(0.74, 1.08, lowK), restK) * (tall ? 1.75 : W / H < 1.2 ? 1.3 : 1);
     camPos.set(focus.x + Math.sin(ang) * dist, focus.y + lerp(mixN('up'), STOPS[Math.round(P)].tag === 'isles' ? 0.2 : 1.1, restK) - cmy * 1.6, focus.z + Math.cos(ang) * dist);
-    const floor = height(camPos.x, camPos.z) + 2.2; camPos.y = Math.max(camPos.y, floor, 2); camera.position.copy(camPos); camera.lookAt(a.copy(focus));
+    const floor = height(camPos.x, camPos.z) + 2.2; if (re.jolt > 0.02) { camPos.x += Math.sin(time * 47) * re.jolt * 0.45; camPos.y += Math.sin(time * 61) * re.jolt * 0.45; } camPos.y = Math.max(camPos.y, floor, 2); camera.position.copy(camPos); camera.lookAt(a.copy(focus));
     const sx = tall ? 0 : sxRaw * (W / H < 1.2 ? 0.6 : 1), gorge = Math.max(0, 1 - Math.abs(P - at('labs')) / 0.62), sy = tall ? -0.26 : mixN('sy') - lowK * restK * 0.05 + smooth(0, 0.55, gorge) * (1 - restK) * 0.09;
     camera.setViewOffset(W, H, -sx * W, -sy * H, W, H);
     trees.userData.lod(camPos.z); rocks.userData.lod(camPos.z); terrain.userData.lod(camPos.z);
@@ -195,5 +214,5 @@ export function createWorld(el, { reduced = false, onStop } = {}) {
   el.appendChild(renderer.domElement); resize(); request();
 
   return () => { dead = true; cancelAnimationFrame(frame); ro.disconnect(); window.removeEventListener('scroll', onScroll); window.removeEventListener('pointermove', onPointer); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('phoenix', onPhoenix);
-    scene.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); }); shadowRT.dispose(); sunRT.dispose(); sunQuad.material.dispose(); sunQuad.dispose(); loaded.forEach((t) => t.dispose()); u.uHMap.value?.dispose(); casters.forEach((c) => c.userData.depthMat.dispose()); flora.dispose(); rocks.userData.stop(); cherry.userData.stop(); grass.userData.stop(); isles.userData.stop(); falls.userData.stop(); composer.dispose(); renderer.dispose(); renderer.domElement.remove(); el.classList.remove('ready'); };
+    stopRanges(); for (const n in skies) skies[n].t?.dispose(); scene.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); }); shadowRT.dispose(); sunRT.dispose(); sunQuad.material.dispose(); sunQuad.dispose(); loaded.forEach((t) => t.dispose()); u.uHMap.value?.dispose(); casters.forEach((c) => c.userData.depthMat.dispose()); flora.dispose(); rocks.userData.stop(); cherry.userData.stop(); grass.userData.stop(); isles.userData.stop(); falls.userData.stop(); composer.dispose(); renderer.dispose(); renderer.domElement.remove(); el.classList.remove('ready'); };
 }

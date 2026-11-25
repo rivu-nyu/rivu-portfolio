@@ -9,13 +9,16 @@ export default function World() {
   useEffect(() => {
     let dispose, cancelled = false;
     const el = host.current;
-    import('./world/index.js').then(({ createWorld }) => {
+    import('./world/index.js').then(async ({ createWorld, loadRelief }) => {
+      await loadRelief();
       if (cancelled) return;
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       dispose = createWorld(el, { reduced, onStop: setStop });
     }).catch((err) => console.warn('3D world unavailable, showing the static backdrop.', err));
     return () => { cancelled = true; dispose?.(); };
   }, []);
+
+  useEffect(() => { window.dispatchEvent(new CustomEvent('worldstop', { detail: STOPS[stop].id })); }, [stop]);
 
   return (
     <>
