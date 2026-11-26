@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { GLSL, SHADOW, HMAP, noise, smooth, bump, rng, lerp } from './common';
+import { GLSL, SHADOW, HMAP, noise, smooth, bump, rng, lerp, FastLoader } from './common';
 import { STOP_GAP } from './stops';
-import { BIOME, CONE, FALL, FALLS, center, fallCliff, height, riverWidth } from './landscape';
+import { BIOME, CONE, FALL, FALLS, center, fallCliff, height, portalClear, riverWidth } from './landscape';
 
 /* Photo-scanned trees (Poly Haven, CC0), baked into view-dependent cards: each atlas holds the same tree seen from
    several sides, with its surface direction and ambient occlusion, so a whole forest can be lit like real geometry.
@@ -24,7 +24,7 @@ const VS = (k, depth) => GLSL + `attribute vec4 aP; attribute vec4 aQ; varying v
     vec2 c = position.xy; vC = c; vec2 S = vec2(${k.cols.toFixed(1)}, ${(k.views / k.cols).toFixed(1)}); vec2 a = cell(i), b = cell(i + 1.); vU0 = vec2((a.x + c.x) / S.x, 1. - (a.y + 1. - c.y) / S.y); vU1 = vec2((b.x + c.x) / S.x, 1. - (b.y + 1. - c.y) / S.y);
     float X = (c.x - .5) * ${k.w.toFixed(4)} * H * aQ.y, Y = (c.y - ${k.foot.toFixed(4)}) * ${k.h.toFixed(4)} * H;
     vec3 w = o + r * X + vec3(0., Y, 0.); float sw = Y * Y / H * .006; w.x += sw * sin(uTime * 1.1 + o.x * .2 + o.z * .13); w.z += sw * cos(uTime * .9 + o.z * .2); w += r * sin(uTime * 2.6 + c.y * 9. + c.x * 7. + o.x) * .0022 * H * c.y;
-    vW = w; vRt = r; vD = d; vSeed = aQ.z; vDense = aQ.w; vSize = H; vSun = ${depth ? '1.' : 'sunVis(o + vec3(0., H * .6, 0.), uSunDir) * mix(.42, 1., softShade(o + vec3(0., H * c.y, 0.) + uSunDir * H * .34, clamp(H * .0016, .006, .03)))'}; gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.); }`;
+    vW = w; vRt = r; vD = d; vSeed = aQ.z; vDense = aQ.w; vSize = H; vSun = ${depth ? '1.' : 'sunVis(o + vec3(0., H * .6, 0.), uSunDir) * mix(.42, 1., softShade(o + vec3(0., H * c.y, 0.) + uSunDir * H * .34, clamp(H * .0016, .006, .03)))'}; gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.); if (cut(o, -1270.)) gl_Position = vec4(2.,2.,2.,1.); }`;
 
 function material(u, k, low, isle) {
   const uni = { ...u, tA: { value: null }, tB: { value: null }, uMoon: { value: new THREE.Vector3(0, -1, 0) } };
@@ -55,7 +55,7 @@ function material(u, k, low, isle) {
 
 // One set of atlases and materials per world; meshes are added chunk by chunk.
 export function createFlora(u, low, onLoad) {
-  const loader = new THREE.TextureLoader(), textures = [], mats = {}, quad = new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]), 3); let dead = false, left = 0;
+  const loader = new FastLoader(), textures = [], mats = {}, quad = new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]), 3); let dead = false, left = 0;
   const load = (n, srgb, cb) => { left++; loader.load(`/trees/${n}${low ? '_s' : ''}.webp`, (t) => { if (dead) return t.dispose(); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; textures.push(t); cb(t); left--; onLoad(); }, undefined, () => { left--; onLoad(); }); };
   const get = (kind, isle) => { const key = kind + (isle ? '*' : ''); if (!mats[key]) { const m = mats[key] = material(isle ? { ...u, ...isle } : u, KINDS[kind], low, !!isle); const other = mats[isle ? kind : kind + '*']; if (other) { m.uni.tA = other.uni.tA; m.uni.tB = other.uni.tB; m.mat.uniforms.tA = m.depth.uniforms.tA = m.uni.tA; m.mat.uniforms.tB = m.depth.uniforms.tB = m.uni.tB; } else { load(kind, true, (t) => { m.uni.tA.value = t; }); load(kind + '_n', false, (t) => { m.uni.tB.value = t; }); } } return mats[key]; };
   // items: [x, y, z, height, turn, width, seed]
@@ -74,7 +74,7 @@ export function createTrees(flora, low, perches) {
   const key = (x, z) => `${Math.floor(x / 6)},${Math.floor(z / 6)}`;
   const free = (x, z, r) => { for (let i = -1; i < 2; i++) for (let j = -1; j < 2; j++) for (const [a, b, c] of taken.get(key(x + i * 6, z + j * 6)) || []) if ((a - x) ** 2 + (b - z) ** 2 < (r + c) ** 2) return false; return true; };
   const claim = (x, z, r) => { const k = key(x, z); if (!taken.has(k)) taken.set(k, []); taken.get(k).push([x, z, r]); };
-  const blocked = (x, z) => Math.hypot(x - CONE.x, z - CONE.z) < 175 || (Math.abs(z - FALL.z) < 34 && x > FALL.x - 48 && fallCliff(x, z) < 12) || (z - FALL.z > -100 && z - FALL.z < 34 && x > center(z) - 4 && x < FALL.x - 4);
+  const blocked = (x, z) => portalClear(x, z) || Math.hypot(x - CONE.x, z - CONE.z) < 175 || (Math.abs(z - FALL.z) < 34 && x > FALL.x - 48 && fallCliff(x, z) < 12) || (z - FALL.z > -100 && z - FALL.z < 34 && x > center(z) - 4 && x < FALL.x - 4);
   const max = low ? 5200 : 17000; let n = 0;
   for (let t = 0; t < max * 9 && n < max; t++) {
     const focus = t < (low ? 2000 : 7000), z = focus ? FALL.z + (R() - 0.5) * 300 : 1200 - R() * 3900, U = -z / STOP_GAP, q = R(), x = focus ? FALL.x - 20 + R() * 175 : center(z) + (R() < 0.5 ? -1 : 1) * (Math.max(17.5, riverWidth(z) + 6) + (q < 0.5 ? q * 110 : q * q * 270)), y = height(x, z);
@@ -105,7 +105,7 @@ export function createTrees(flora, low, perches) {
       const edge = smooth(0, 0.5, stand), c = R(), kind = c < 0.52 ? 'spruce' : c < 0.84 ? 'spruce2' : 'fir', h = (3.2 + R() * R() * 5.6) * (0.72 + 0.5 * edge) * (1 - 0.35 * smooth(80, 138, y)) * (kind === 'fir' ? 1.25 : 1), r = h * (kind === 'fir' ? 0.08 : 0.125); if (!free(x, z, r * 0.72)) continue; claim(x, z, r * 0.72);
       lists[kind].push([x, y - 0.1 - slope * h * 0.05, z, h, R() * 6.28, 0.78 + R() * 0.3, R(), 0.45 + 0.55 * edge]); k++; } }
   // the same standing forest over every other mountainside, thinning toward the treeline and around bare rock
-  { const want = low ? 4500 : 24000; let k = 0; for (let t = 0; t < want * 8 && k < want; t++) { const z = 1150 - R() * 3500, U = -z / STOP_GAP; if (Math.abs(z - FALL.z) < 215 && R() < 0.6) continue; const x = center(z) + (R() < 0.5 ? -1 : 1) * (40 + R() * 190), o = x - center(z); if (Math.abs(z - FALL.z) < 190 && o > 20) continue; if (Math.hypot(x - CONE.x, z - CONE.z) < 190) continue;
+  { const want = low ? 4500 : 24000; let k = 0; for (let t = 0; t < want * 8 && k < want; t++) { const z = 1150 - R() * 3500, U = -z / STOP_GAP; if (Math.abs(z - FALL.z) < 215 && R() < 0.6) continue; const x = center(z) + (R() < 0.5 ? -1 : 1) * (40 + R() * 190), o = x - center(z); if (Math.abs(z - FALL.z) < 190 && o > 20) continue; if (Math.hypot(x - CONE.x, z - CONE.z) < 190 || portalClear(x, z)) continue;
       const canyon = bump(U, 2.12, 0.5, 0.42), volc = bump(U, 5.5, 0.7, 0.4), pink = bump(U, 0, 0.18, 0.4); if (R() < canyon * 1.02 + volc * 1.05) continue; const y = height(x, z); if (y < 7 || y > 118) continue; if (pink > 0.3 && y < 24) continue;
       const slope = Math.hypot(height(x + 2, z) - y, height(x, z + 2) - y) / 2; if (slope > 1.5) continue;
       const stand = noise(x * 0.018 + 7, z * 0.018) + 0.5 * noise(x * 0.06, z * 0.06 + 3) + 0.5 - smooth(78, 118, y) * 0.75 - smooth(0.95, 1.5, slope) * 0.45; if (stand < R() * 0.4) continue;
@@ -135,7 +135,7 @@ export function createGrass(u, low, onLoad) {
   const pos = [], uv = [], idx = []; for (let k = 0; k < 2; k++) { const a = k * 1.57, dx = Math.cos(a), dz = Math.sin(a), b = pos.length / 3; for (const [x, y] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) { pos.push(dx * x * 0.8, y, dz * x * 0.8); uv.push(x * 0.5 + 0.5, y); } idx.push(b, b + 1, b + 2, b, b + 2, b + 3); }
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
   const off = new Float32Array(n * 4); for (let i = 0; i < n; i++) off.set([R() * size, R() * size, R() * 6.28, R()], i * 4); geo.setAttribute('aO', new THREE.InstancedBufferAttribute(off, 4));
-  const uni = { ...u, tA: { value: null } }; let dead = false; new THREE.TextureLoader().load('/trees/grass.webp', (t) => { if (dead) return t.dispose(); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; uni.tA.value = t; onLoad(); });
+  const uni = { ...u, tA: { value: null } }; let dead = false; new FastLoader().load('/trees/grass.webp', (t) => { if (dead) return t.dispose(); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; uni.tA.value = t; onLoad(); });
   const mat = new THREE.ShaderMaterial({ uniforms: uni, side: THREE.DoubleSide,
     vertexShader: GLSL + HMAP + /* glsl */ `attribute vec4 aO; varying vec3 vW; varying vec2 vU; varying float vY, vR, vSun;
       void main(){ vec2 f = cameraPosition.xz - vec2(viewMatrix[0][2], viewMatrix[2][2]) * ${(size * 0.38).toFixed(1)}; vec2 c = mod(aO.xy - f, ${size.toFixed(1)}) - ${(size / 2).toFixed(1)} + f; vW = vec3(c.x, hAt(c), c.y);
@@ -144,7 +144,7 @@ export function createGrass(u, low, onLoad) {
         float k = patchy * edge * smoothstep(.9, 1.7, vW.y) * smoothstep(1.1, .6, sl) * (1. - volc) * (1. - snowy * .8) * mix(1., step(.70, aO.w), canyon);
         float s = k * (.35 + .75 * fract(aO.w * 13.7)); float ca = cos(aO.z), sa = sin(aO.z); vec3 p = position; p.xz = mat2(ca, -sa, sa, ca) * p.xz; p.y -= .06;
         p.xz += vec2(.16, .08) * p.y * p.y * (sin(uTime * 2.1 + c.x * .4 + c.y * .3) + .4); vW += p * s * vec3(1.15, 1., 1.15); vY = position.y; vR = aO.w; vU = vec2((uv.x + floor(fract(aO.w * 31.) * 4.)) * .25, uv.y * .98); vSun = sunVis(vec3(c.x, vW.y + .5, c.y), uSunDir);
-        gl_Position = k < .05 ? vec4(2.,2.,2.,1.) : projectionMatrix * viewMatrix * vec4(vW, 1.); }`,
+        if (cut(vW, -1272.)) k = 0.; gl_Position = k < .05 ? vec4(2.,2.,2.,1.) : projectionMatrix * viewMatrix * vec4(vW, 1.); }`,
     fragmentShader: GLSL + SHADOW + /* glsl */ `uniform sampler2D tA; varying vec3 vW; varying vec2 vU; varying float vY, vR, vSun; void main(){ ${BIOME} vec4 t = texture2D(tA, vU); float cov = (t.a - .34) / max(fwidth(t.a), .06) + .5; if (cov < .06) discard;
       vec3 alb = t.rgb * mix(vec3(.75,.88,.55), vec3(1.35,1.15,.7), fract(vR * 41.)) * 1.15; alb = mix(alb, alb * vec3(1.9,1.35,.8) + vec3(.06,.04,.015), canyon); alb = mix(alb, vec3(.55,.57,.58), snowy * .55);
       vec3 V = normalize(cameraPosition - vW); float sh = vSun * castShadow(vW + uSunDir * .3, vec3(0.,1.,0.));
@@ -168,7 +168,7 @@ function rockMaterial(u) {
     vertexShader: `precision highp float; varying vec3 vW, vN, vP; varying vec2 vU; varying float vAo, vSun; uniform vec3 uSunDir; ${HMAP}
       void main(){ vec4 w = instanceMatrix * vec4(position, 1.); vW = w.xyz; vP = position; vU = uv; mat3 m = mat3(instanceMatrix); vN = m * (normal / vec3(dot(m[0],m[0]), dot(m[1],m[1]), dot(m[2],m[2]))); float big = length(m[1]); vAo = w.y > 300. ? 1. : mix(.35, 1.0, smoothstep(-.1 * big, .7 * big, vW.y - hAt(vW.xz))); vSun = sunVis(vW, uSunDir); gl_Position = projectionMatrix * viewMatrix * w; }`,
     fragmentShader: GLSL + SHADOW + /* glsl */ `uniform sampler2D tBoulder, tBoulderN, tRock, tRockN, tNoise; varying vec3 vW, vN, vP; varying vec2 vU; varying float vAo, vSun;
-      void main(){ ${BIOME} float dist = length(cameraPosition - vW); if (dist < 10. && hash2(gl_FragCoord.xy) * .85 + .15 > smoothstep(6., 10., dist)) discard; vec3 G = normalize(vN), N = G;
+      void main(){ if (cut(vW, -1280.)) discard; ${BIOME} float dist = length(cameraPosition - vW); if (dist < 10. && hash2(gl_FragCoord.xy) * .85 + .15 > smoothstep(6., 10., dist)) discard; vec3 G = normalize(vN), N = G;
         vec3 tn = texture2D(tBoulderN, vU).xyz * 2. - 1.; vec3 dpx = dFdx(vW), dpy = dFdy(vW); vec2 dux = dFdx(vU), duy = dFdy(vU); vec3 T = dpx * duy.y - dpy * dux.y, B = dpy * dux.x - dpx * duy.x; float il = inversesqrt(max(max(dot(T,T), dot(B,B)), 1e-12)); N = normalize(T * il * tn.x * 1.25 + B * il * tn.y * 1.25 + G * tn.z);
         vec3 alb = texture2D(tBoulder, vU).rgb; float l = dot(alb, vec3(.33)); vec3 w = pow(abs(G), vec3(4.)); w /= w.x + w.y + w.z; vec3 p = vW * .55; vec3 dt = texture2D(tRock, p.zy).rgb * w.x + texture2D(tRock, p.xz).rgb * w.y + texture2D(tRock, p.xy).rgb * w.z; alb *= mix(1., .35 + 1.9 * dot(dt, vec3(.33)), smoothstep(60., 14., dist));
         float nz = texture2D(tNoise, vW.xz * .09 + vW.y * .07).r;

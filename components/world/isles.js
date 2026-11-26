@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLSL, rng, lerp, smooth, noise } from './common';
-import { CONE, center, groundMaterial } from './landscape';
+import { CONE, center, groundMaterial, reliefAt } from './landscape';
 import { createCastle } from './castle';
 import { fallMaterial } from './waterfall';
 
@@ -30,7 +30,7 @@ function isle(seed, R0, depth, A, streamA) {
 
 /* The great island: one landmass with mountains, a lake, a river that cascades from the snow to the rim,
    forests that follow the ground, and a crag for the castle. Local axes: x = viewer's right, z = away from the viewer. */
-const R0 = 150, CRAG = { x: 42, z: 0, r: 43, y: 46 }, LAKE = { x: -52, z: 2, r: 33, y: 19 };
+const R0 = 150, KS = 1.62, CRAG = { x: 30, z: 6, r: 43, y: 44 }, LAKE = { x: -52, z: 2, r: 33, y: 19 };
 const RIVER = [[-30, 104, 54], [-34, 94, 46], [-28, 82, 38], [-42, 68, 32], [-32, 52, 25.5], [-46, 36, 20], [-52, 18, 19], [-48, -14, 19], [-34, -34, 17], [-14, -48, 12.5], [-22, -68, 8], [-10, -86, 4.5], [-14, -104, 1], [-8, -120, -2.5]];
 const rimAt = (a) => R0 * (1 + 0.34 * fbm(Math.cos(a) * 1.25 + 4.4, Math.sin(a) * 1.25 - 2.2, 5));
 const END = (() => { const a = Math.atan2(-120, -8), r = rimAt(a); return [Math.cos(a) * r, Math.sin(a) * r]; })();
@@ -42,7 +42,7 @@ function ground(x, z) {
   let y = -1 + 25 * smooth(-125, 70, z) + 7 * fbm(x * 0.018 + 3, z * 0.018, 4) + 1.6 * fbm(x * 0.07, z * 0.07 + 8, 3);
   let rid = 0, w = 1, f = 0.0135, am = 0.5; const wx = x + 16 * noise(x * 0.02, z * 0.02 + 4), wz = z + 16 * noise(x * 0.02 + 9, z * 0.02); for (let i = 0; i < 7; i++) { let n = 1 - Math.abs(noise(wx * f + i * 11.3 + 1.7, wz * f - i * 7.7)); n *= n * w; w = Math.min(1, n * 1.8); rid += n * am; am *= 0.5; f *= 2.05; }
   const back = smooth(8, 105, z + 0.22 * Math.abs(x + 20) - 14 + 16 * noise(x * 0.02, 5)), side = smooth(60, 128, Math.abs(x + 12)) * smooth(-70, 10, z) * 0.45;
-  y += (22 + rid * 104) * Math.max(back, side) * (0.7 + 0.45 * Math.exp(-Math.pow((x + 40) / 70, 2))) * smooth(1.02, 0.78, r) + 2.4 * back * noise(x * 0.13, z * 0.13);
+  const real = reliefAt(x * 2.1 + 700, z * 2.1 + 340); if (real !== null) rid = 0.55 * Math.pow(real, 1.1) + 0.55 * rid; y += (16 + rid * 74) * Math.max(back, side) * (0.7 + 0.45 * Math.exp(-Math.pow((x + 40) / 70, 2))) * smooth(1.02, 0.78, r) + 2.4 * back * noise(x * 0.13, z * 0.13);
   y -= 9 * smooth(0.84, 1, r) * (0.7 + 0.5 * noise(x * 0.04, z * 0.04)) + smooth(0.9, 1, r) * (2.2 * noise(x * 0.16, z * 0.16) + 1.4 * noise(x * 0.4, z * 0.4));
   // castle crag
   const cd = Math.hypot(x - CRAG.x, (z - CRAG.z)) * (1 + 0.16 * noise(Math.atan2(z - CRAG.z, x - CRAG.x) * 2.2, 3)), c0 = smooth(CRAG.r + 30, CRAG.r, cd), c1 = 0.55 * c0 + 0.25 * smooth(0.28, 0.42, c0 + 0.1 * noise(x * 0.06, z * 0.06)) + 0.2 * smooth(0.62, 0.74, c0 + 0.1 * noise(x * 0.07 + 5, z * 0.07)), rough = c0 * (1 - c0) * 4 * (6 * noise(x * 0.07, z * 0.07) + 4 * noise(x * 0.2, z * 0.2) + 2 * noise(x * 0.5, z * 0.5)); y = lerp(y, CRAG.y - 1.2, c1) + rough;
@@ -55,7 +55,7 @@ function ground(x, z) {
 }
 
 function greatIsland(q) {
-  const A = Math.round(440 * q), T = Math.round(130 * q), B = Math.round(90 * q), depth = 92, f = 40 / R0, pos = [], ao = [], idx = [];
+  const A = Math.round(560 * q), T = Math.round(170 * q), B = Math.round(90 * q), depth = 92, f = 40 / R0, pos = [], ao = [], idx = [];
   for (let j = 0; j <= T + B; j++) for (let i = 0; i <= A; i++) { const a = (i % A) / A * 6.28318, rr = rimAt(a); let x, y, z, o = 1;
     if (j <= T) { const r = Math.pow(j / T, 0.8); x = Math.cos(a) * rr * r; z = Math.sin(a) * rr * r; y = ground(x, z); }
     else { const t = (j - T) / B, e = ground(Math.cos(a) * rr, Math.sin(a) * rr), lobe = 0.45 + 1.1 * Math.max(0, 0.5 + fbm(Math.cos(a) * 1.9 + 6.2, Math.sin(a) * 1.9, 4)), prof = t < 0.05 ? 1 + 0.3 * t : Math.pow(1 - (t - 0.05) / 0.95, 0.72), r = rr * prof; y = e - depth * 0.9 * t * lerp(1, lerp(1, lobe, 0.8), smooth(0.1, 0.7, t)); x = Math.cos(a) * r; z = Math.sin(a) * r; const k = smooth(0, 0.06, t) * smooth(1, 0.94, t);
@@ -68,30 +68,25 @@ function greatIsland(q) {
 
 export function createIsles(u, low, perches, flora) {
   const group = new THREE.Group(), R = rng(2024), q = low ? 0.55 : 1;
-  const sh = { uIsleS: { value: null }, uIsleM: { value: new THREE.Matrix4() } }, rock = groundMaterial({ ...u, ...sh }, { rock: true, far: true });
+  const sh = { uIsleS: { value: null }, uIsleM: { value: new THREE.Matrix4() }, uTop: { value: null }, uTopM: { value: new THREE.Matrix4() } }, rock = groundMaterial({ ...u, ...sh }, { rock: true, far: true });
   const cx = center(-1350), cz = -1350, yaw = Math.atan2(center(cz - 12) - center(cz + 12), -24), ang = yaw + Math.PI - 34 * Math.PI / 180, L = V(-Math.sin(ang), 0, -Math.cos(ang)), Rt = V(-L.z, 0, L.x);
-  const P = (right, up, fwd) => V(cx + Rt.x * right + L.x * fwd, 440 + up, cz + Rt.z * right + L.z * fwd), C = P(-24, -4, 312);
-  const W = (x, y, z) => V(C.x + Rt.x * x + L.x * z, C.y + y, C.z + Rt.z * x + L.z * z), basis = new THREE.Matrix4().makeBasis(Rt, V(0, 1, 0), L).setPosition(C);
+  const P = (right, up, fwd) => V(cx + Rt.x * right + L.x * fwd, 440 + up, cz + Rt.z * right + L.z * fwd), C = P(-34, -14, 420);
+  const W = (x, y, z) => V(C.x + (Rt.x * x + L.x * z) * KS, C.y + y * KS, C.z + (Rt.z * x + L.z * z) * KS), basis = new THREE.Matrix4().makeBasis(Rt.clone().multiplyScalar(KS), V(0, KS, 0), L.clone().multiplyScalar(KS)).setPosition(C);
   const M = (p, s, a = 0) => new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), a), V(s, s, s));
   const inst = (g, m) => { const k = new THREE.InstancedMesh(g, rock, 1); k.setMatrixAt(0, m); k.frustumCulled = false; group.add(k); return k; };
 
   const land = inst(greatIsland(q), basis);
-  // the small shelf the phoenix lands on
-  const sg = isle(3.1, 5.6, 13, Math.round(120 * q), 2.6), shelfP = P(1.5, -8.4, 1.5), shelf = inst(sg.g, M(shelfP, 1)); shelf.layers.enable(1);
-  perches.push({ x: cx + Rt.x + L.x, z: cz + Rt.z + L.z, y: 440 - 4.4, ground: 431, tag: 'isles', noRock: true, rock: 2.7, face: 0.5, cine: { L, Rt, deck: 362 } });
-
   // forests
   const kinds = { fir: [], spruce: [], spruce2: [], oak: [], elm: [], cherry: [], bush: [] }, grid = new Map();
-  const N = low ? 900 : 3400; let cnt = 0; for (let t = 0; t < N * 14 && cnt < N; t++) { const a = R() * 6.28, rr = Math.sqrt(R()) * 0.96, rm = rimAt(a), x = Math.cos(a) * rm * rr, z = Math.sin(a) * rm * rr, y = ground(x, z); if (y > 78 || Math.hypot(x - CRAG.x, z - CRAG.z) < CRAG.r - 2) continue;
+  const N = low ? 1500 : 7600; let cnt = 0; for (let t = 0; t < N * 14 && cnt < N; t++) { const a = R() * 6.28, rr = Math.sqrt(R()) * 0.96, rm = rimAt(a), x = Math.cos(a) * rm * rr, z = Math.sin(a) * rm * rr, y = ground(x, z); if (y > 78 || Math.hypot(x - CRAG.x, z - CRAG.z) < CRAG.r - 2) continue;
     const sl = Math.hypot(ground(x + 1.5, z) - y, ground(x, z + 1.5) - y) / 1.5; if (sl > 0.95) continue; const [d, k] = near(x, z); if (d < riverW(k) + 2.2) continue; if (Math.hypot(x - LAKE.x, (z - LAKE.z) * 1.15) < LAKE.r + 6 && y < LAKE.y + 0.5) continue; if (Math.abs(x - CRAG.x + 6) < 6 && z < CRAG.z && z > CRAG.z - 78) continue;
-    const dens = noise(x * 0.022 + 2, z * 0.022) + 0.36 + smooth(20, 50, y) * 0.25; if (dens < R() * 0.8) continue; const key = Math.round(x / 2.6) + ',' + Math.round(z / 2.6); if (grid.has(key)) continue; grid.set(key, 1);
+    const dens = noise(x * 0.022 + 2, z * 0.022) + 0.36 + smooth(20, 50, y) * 0.25; if (dens < R() * 0.8) continue; const key = Math.round(x / 1.75) + ',' + Math.round(z / 1.75); if (grid.has(key)) continue; grid.set(key, 1);
     const alpine = smooth(16, 44, y + 10 * noise(x * 0.03, z * 0.03)); let kind, h; const c = R(); if (c < alpine) { kind = R() < 0.4 ? 'fir' : R() < 0.5 ? 'spruce' : 'spruce2'; h = (kind === 'fir' ? 7.5 : 5) + R() * 4.5; if (y > 58) h *= 0.7; } else if (Math.hypot(x - LAKE.x, z - LAKE.z) < 58 && R() < 0.22) { kind = 'cherry'; h = 5 + R() * 3; } else if (R() < 0.14) { kind = 'bush'; h = 1.4 + R(); } else { kind = R() < 0.55 ? 'oak' : 'elm'; h = 5 + R() * 4; }
     const p = W(x, y - 0.15, z); kinds[kind].push([p.x, p.y, p.z, h, R() * 6.28, 0.9 + R() * 0.25, R()]); cnt++; }
   const depthOf = []; for (const [k, l] of Object.entries(kinds)) if (l.length) { l.sort((a, b) => (a[0] - cx) ** 2 + (a[2] - cz) ** 2 - (b[0] - cx) ** 2 - (b[2] - cz) ** 2); const m = flora.mesh(k, l, { isle: sh }); depthOf.push(m); group.add(m); }
-  { const l = []; for (let i = 0; i < 14; i++) { const a = R() * 6.28, rr = 0.35 + R() * 0.55, rm = sg.rim(a); l.push([shelfP.x + Math.cos(a) * rm * rr, shelfP.y + sg.topY(a, rr, rm) - 0.06, shelfP.z + Math.sin(a) * rm * rr, 0.4 + R() * 0.5, R() * 6.28, 1, R()]); } group.add(flora.mesh('fern', l, { isle: sh, shadow: false })); }
 
   // castle
-  const castle = createCastle(u, sh, low); castle.applyMatrix4(new THREE.Matrix4().copy(basis).multiply(new THREE.Matrix4().compose(V(CRAG.x, CRAG.y, CRAG.z), new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), -0.12), V(1.22, 1.22, 1.22)))); castle.updateMatrixWorld(true); group.add(castle);
+  const castle = createCastle(u, sh, low); castle.applyMatrix4(new THREE.Matrix4().copy(basis).multiply(new THREE.Matrix4().compose(V(CRAG.x, CRAG.y + 3, CRAG.z), new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), -0.12), V(1 / KS, 1 / KS, 1 / KS)))); castle.updateMatrixWorld(true); group.add(castle);
 
   // lake and river surface
   { const p = [], uv = [], ix = [], lv = LAKE.y; const K = 48; p.push(LAKE.x, lv, LAKE.z); uv.push(0, 0, 0); for (let k = 0; k <= K; k++) { const a = k / K * 6.2832; p.push(LAKE.x + Math.cos(a) * (LAKE.r + 15), lv, LAKE.z + Math.sin(a) * (LAKE.r + 15) / 1.15); uv.push(0, 0, 0); if (k < K) ix.push(0, k + 2, k + 1); }
@@ -115,11 +110,12 @@ export function createIsles(u, low, perches, flora) {
   [[-60, 24, 40, 120, 14], [-20, 14, -40, 110, 12], [-70, 40, 80, 120, 18], [40, 24, 60, 120, 16], [60, 12, -70, 100, 12], [-90, 12, -50, 90, 12]].forEach(([x, y, z, w, h]) => { const m = new THREE.Mesh(wg, mist); m.position.copy(W(x, y, z)); m.scale.set(w, h, 1); m.renderOrder = 4; group.add(m); });
 
   // moonlight shadows over the whole island, drawn once
-  const SZ = low ? 1024 : 2048, rt = new THREE.WebGLRenderTarget(SZ, SZ, { depthTexture: new THREE.DepthTexture(SZ, SZ, THREE.UnsignedIntType) }); rt.depthTexture.minFilter = rt.depthTexture.magFilter = THREE.NearestFilter; sh.uIsleS.value = rt.depthTexture; let drawn = false;
-  group.userData.shadow = (renderer, dir) => { if (drawn || flora.left()) return; drawn = true; const cam = new THREE.OrthographicCamera(-185, 185, 165, -165, 1, 800); cam.position.copy(C).addScaledVector(dir, 380); cam.position.y += 10; cam.lookAt(C.x, C.y + 10, C.z); cam.updateMatrixWorld(); sh.uIsleM.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+  const SZ = low ? 1024 : 3072, rt = new THREE.WebGLRenderTarget(SZ, SZ, { depthTexture: new THREE.DepthTexture(SZ, SZ, THREE.UnsignedIntType) }); rt.depthTexture.minFilter = rt.depthTexture.magFilter = THREE.NearestFilter; sh.uIsleS.value = rt.depthTexture; const rtT = new THREE.WebGLRenderTarget(512, 512, { depthTexture: new THREE.DepthTexture(512, 512, THREE.UnsignedIntType) }); rtT.depthTexture.minFilter = rtT.depthTexture.magFilter = THREE.NearestFilter; let drawn = false; group.userData.keep = W(CRAG.x, CRAG.y + 3, CRAG.z);
+  group.userData.shadow = (renderer, dir) => { if (drawn || flora.left()) return; drawn = true; const cam = new THREE.OrthographicCamera(-290, 290, 260, -260, 1, 1300); cam.position.copy(C).addScaledVector(dir, 600); cam.position.y += 10; cam.lookAt(C.x, C.y + 10, C.z); cam.updateMatrixWorld(); sh.uIsleM.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     const sc = new THREE.Scene(), dm = new THREE.ShaderMaterial({ side: THREE.DoubleSide, vertexShader: 'void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }', fragmentShader: 'void main(){ gl_FragColor = vec4(1.); }' }); const add = (g, m, mt = dm) => { const k = new THREE.Mesh(g, mt); k.matrixAutoUpdate = false; k.matrix.copy(m); k.frustumCulled = false; sc.add(k); }; add(land.geometry, basis); castle.userData.solid.forEach((m) => add(m.geometry, m.matrixWorld)); depthOf.forEach((m) => { m.userData.depthMat.uniforms.uMoon.value.copy(dir); add(m.geometry, new THREE.Matrix4(), m.userData.depthMat); });
+    const tc = new THREE.OrthographicCamera(-90, 90, 90, -90, 1, 301), K0 = W(CRAG.x, CRAG.y + 3, CRAG.z); tc.position.set(K0.x, K0.y + 220, K0.z); tc.up.set(0, 0, 1); tc.lookAt(K0.x, K0.y, K0.z); tc.updateMatrixWorld(); sh.uTopM.value.multiplyMatrices(tc.projectionMatrix, tc.matrixWorldInverse); const ss = new THREE.Scene(); castle.userData.solid.forEach((m) => { const k = new THREE.Mesh(m.geometry, dm); k.matrixAutoUpdate = false; k.matrix.copy(m.matrixWorld); k.frustumCulled = false; ss.add(k); }); sh.uTop.value = null; renderer.setRenderTarget(rtT); renderer.clear(); renderer.render(ss, tc); sh.uTop.value = rtT.depthTexture;
     sh.uIsleS.value = null; renderer.setRenderTarget(rt); renderer.clear(); renderer.render(sc, cam); renderer.setRenderTarget(null); sh.uIsleS.value = rt.depthTexture; dm.dispose(); };
-  group.userData.stop = () => rt.dispose();
+  group.userData.stop = () => { rt.dispose(); rtT.dispose(); };
   depthOf.forEach((m) => { m.userData.isleDepth = m.userData.depthMat; });
 
   // volumetric cloud sea, marched through a slab

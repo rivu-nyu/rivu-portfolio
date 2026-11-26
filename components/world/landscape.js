@@ -35,6 +35,8 @@ function cubic(m, x, y) { // smooth B-spline lookup, clamped at the edges
   for (let j = 0; j < 4; j++) { const r = Math.min(m.h - 1, Math.max(0, Y + j - 1)) * m.w; for (let i = 0; i < 4; i++) s += m.d[r + Math.min(m.w - 1, Math.max(0, X + i - 1))] * bs[i] * bt[j]; } return s;
 }
 
+export const reliefAt = (x, z) => (relief ? cubic(relief, Math.abs(x) / 3.4 % relief.w, Math.abs(z) / 3.4 % relief.h) : null);
+
 export function height(x, z) {
   const u = -z / STOP_GAP, o = x - center(z), d = Math.abs(o);
   const canyon = bump(u + 0.1 * noise(x * 0.008, z * 0.008), 2.12, 0.5, 0.4), lake = lakeAt(z), volc = bump(u, 5.5, 0.7, 0.4);
@@ -89,9 +91,15 @@ export function height(x, z) {
   }
   const hills = (noise(x * 0.03, z * 0.03) + 0.5 * noise(x * 0.08, z * 0.08)) * 3.2 * bank * (fz < 60 && o > 20 ? smooth(30, 60, fz) : 1) + 0.35 * noise(x * 0.31, z * 0.31);
   let y = 2.2 + hills + m - 7 * (1 - smooth(rw - 3, rw + 12, d + 2.5 * noise(x * 0.07, z * 0.07)));
+  { const k = smooth(-1225, -1275, z) * smooth(-1350, -1330, z) * smooth(78, 36, d); if (k > 0) y = Math.min(y, lerp(y, (d < 16 ? y : 2.6 + 0.9 * noise(x * 0.14, z * 0.14)), k)); }
+  if (d < 60 && z < -1296 && z > -1344) y = Math.min(y, lerp(y, -2.6, smooth(-1296, -1317, z) * smooth(60, 46, d)));
   if (fz < 30 && o > 4 && o < 110) { const e = fallCliff(x, z), path = z - FALL.z - 4.5 * noise(x * 0.05, 2); y = Math.min(y, lerp(y, -1.3, smooth(17, 7, Math.abs(path)) * smooth(2, -5, e))); }
   return y;
 }
+
+// The mountain that closes the snow valley, and the cave its river runs into.
+export const GATE = -1291;
+export const portalClear = (x, z) => z < -1266 && z > -1400 && Math.abs(x - center(z)) < (z > -1288 ? 34 : 150);
 
 for (const f of FALLS) f.lip = [0, 25 + 0.05 * Math.abs(f.s) + 1.5 * noise(f.s * 0.3, 2), 59 + 0.14 * Math.abs(f.s) + 5 * noise(f.s * 0.11, 7), 101 + 0.04 * Math.abs(f.s) + 7 * noise(f.s * 0.07, 3)][f.tier];
 export const BIOME = /* glsl */ `
@@ -100,7 +108,7 @@ float U = -vW.z / ${STOP_GAP.toFixed(1)};
 float UW = U + (n2(vW.xz * .011) - .5) * .42 + (n2(vW.xz * .045 + 7.) - .5) * .16 + (n2(vW.xz * .19 + 3.) - .5) * .05;
 float canyon = bump(UW, 2.12, .50, .36), snowy = bump(UW, 4., .42, .62), volc = bump(UW, 5.5, .66, .48);
 float hiA = step(300., vW.y); canyon *= 1. - hiA; snowy *= 1. - hiA; volc *= 1. - hiA; float pinkK = bump(UW, 0., .17, .42) * (1. - hiA);
-vec2 cp = vW.xz - vec2(${CONE.x.toFixed(2)}, ${CONE.z.toFixed(1)}); float coneD = length(cp); float cone = (1. - hiA) * smoothstep(${CONE.r.toFixed(1)}, 120., coneD); volc = max(volc, cone); snowy *= 1. - cone;`;
+vec2 cp = vW.xz - vec2(${CONE.x.toFixed(2)}, ${CONE.z.toFixed(1)}); float coneD = length(cp); float cone = (1. - hiA) * smoothstep(${CONE.r.toFixed(1)}, 120., coneD); volc = max(volc, cone); snowy *= 1. - cone; { float fr = uFrost * (1. - hiA); volc *= 1. - fr; cone *= 1. - fr; snowy = max(snowy, fr * smoothstep(3.7, 4.2, UW)); }`;
 
 // Shared rock/soil surface built from scanned textures, projected from three sides so cliffs never stretch.
 const SURFACE = /* glsl */ `
@@ -116,10 +124,10 @@ vec3 triN(sampler2D t, vec3 p, vec3 w, vec3 n, float k){
 vec3 planar(sampler2D t, vec2 p){ vec2 q = mat2(.82,.57,-.57,.82) * p; return mix(texture2D(t, p).rgb, texture2D(t, q * .31 + .37).rgb, smoothstep(.35,.65, n2(p * .7))); }
 `;
 
-export function groundMaterial(u, { rock = false, far = false } = {}) {
+export function groundMaterial(u, { rock = false, far = false, clip = true } = {}) {
   return new THREE.ShaderMaterial({
-    uniforms: u, side: THREE.DoubleSide, defines: rock ? (far ? { ROCK: 1, ISLE: 1 } : { ROCK: 1 }) : {},
-    vertexShader: `precision highp float; attribute float aAo; varying vec3 vW, vN; varying float vAo, vSun; uniform vec3 uSunDir; ${HMAP}
+    uniforms: u, side: THREE.DoubleSide, defines: rock ? (far ? { ROCK: 1, ISLE: 1 } : { ROCK: 1 }) : clip ? {} : { NOCLIP: 1 },
+    vertexShader: `precision highp float; attribute float aAo; varying vec3 vW, vN; varying float vAo, vSun; uniform vec3 uSunDir; uniform float uFrost; ${HMAP}
       void main(){
         #ifdef ROCK
           vec4 w = instanceMatrix * vec4(position, 1.); vW = w.xyz; vN = mat3(instanceMatrix) * (normal / vec3(dot(instanceMatrix[0].xyz,instanceMatrix[0].xyz), dot(instanceMatrix[1].xyz,instanceMatrix[1].xyz), dot(instanceMatrix[2].xyz,instanceMatrix[2].xyz)));
@@ -128,7 +136,7 @@ export function groundMaterial(u, { rock = false, far = false } = {}) {
             vAo = aAo;
           #endif
         #else
-          vW = position; vN = normal; vAo = aAo;
+          vW = position; vN = normal; vAo = aAo; if (uFrost > .5) vW.y -= 190. * smoothstep(232., 130., length(vW.xz - vec2(210.1, -1400.))) * smoothstep(70., 120., vW.x - vcenter(vW.z));
         #endif
         vSun = sunVis(vW, uSunDir); gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.); }`,
     fragmentShader: GLSL + SHADOW + SURFACE + /* glsl */ `
@@ -137,6 +145,9 @@ export function groundMaterial(u, { rock = false, far = false } = {}) {
       uniform sampler2D uIsleS; uniform mat4 uIsleM; float isleShadow(vec3 p){ vec4 c = uIsleM * vec4(p, 1.); vec3 q = c.xyz / c.w * .5 + .5; if (min(min(q.x, q.y), min(1. - q.x, 1. - q.y)) < 0.) return 1.; float s = 0.; for (int i = 0; i < 6; i++) { float t = float(i) * 2.4; s += step(q.z - .003, texture2D(uIsleS, q.xy + vec2(cos(t), sin(t)) * sqrt(float(i) + .5) * .0005).r); } return s / 6.; }
       #endif
       void main(){
+        #ifndef NOCLIP
+        if (uFrost > .5 && vW.z < -1336. || uCut > .5 && vW.z < -1318. && abs(vW.x - 55. * sin(vW.z * .0045) - 24. * sin(vW.z * .011 + 1.3)) < 64.) discard;
+        #endif
         ${BIOME}
         vec3 G = normalize(vN), N = G; float dist = length(cameraPosition - vW);
         vec3 w = pow(abs(G), vec3(5.)); w /= w.x + w.y + w.z; w = max(w - .06, 0.); w /= w.x + w.y + w.z;
@@ -164,6 +175,7 @@ export function groundMaterial(u, { rock = false, far = false } = {}) {
         #ifdef ISLE
           rk = mix(tri(tRock, vW * .045, w), tri(tRock, vW * .012, w), .4); rk = pow(rk, vec3(1.1)) * .95; rk *= .6 + .6 * tn3(vW * .3, w); N = triN(tRockN, vW * .05, w, G, 1.3); rk = mix(rk, vec3(.10,.14,.06), smoothstep(.45,.62, tn3(vW * .5, w)) * smoothstep(.0,.6,G.y) * .6); float strat = tn(vec2(vW.y * 1.1 + fine * 3., 4.)); rk *= .72 + .55 * strat; rk *= mix(1., .55, smoothstep(.1, -.6, G.y)); rk *= .42 + .78 * smoothstep(.36, .60, tn3(vW * vec3(.11,.03,.11), w)); rk = pow(rk, vec3(1.25)) * .95; { vec3 t2 = tri(tCliffN, vW * vec3(.035,.04,.035), w) * 2. - 1.; N = normalize(N + .8 * vec3(t2.x, t2.y, t2.x) * (1. - w.y)); }
         #endif
+        if (snowy > .01) { float sl0 = 1. - G.y; vec3 ice = mix(vec3(.10,.11,.125), vec3(.36,.40,.45), smoothstep(.2,.7, dot(tri(tRock, vW * .045, w), vec3(.33)) * .7 + fine * .5)); float run = smoothstep(.46,.66, tn(vec2((vW.x + vW.z) * .34, vW.y * .05))) * (1. - w.y); ice = mix(ice, vec3(.50,.60,.68), run * .7); float led = smoothstep(.52,.72, tn(vec2(vW.y * .9 + fine * 3., (vW.x - vW.z) * .06))); ice = mix(ice, vec3(.60,.66,.74), led * .75); rk = mix(rk, ice, snowy * .92); }
         // ground cover
         float slope = 1. - normalize(mix(G, N, .55)).y;
         float gs = smoothstep(.40 + .16 * pinkK, .20 + .14 * pinkK, slope + (fine - .5) * .22) * max(hiA, smoothstep(125., 60., vW.y + big * 40.));
@@ -199,7 +211,7 @@ export function groundMaterial(u, { rock = false, far = false } = {}) {
         alb = mix(alb, mix(rk, sd, .4) * (.65 + .7 * grit), smoothstep(.16,.28,slope) * smoothstep(.52,.36,slope) * .55);
         float line = mix(112., 14., snowy) + canyon * 300. + volc * 400. + hiA * 382.;
         float snow = smoothstep(line - 12., line + 26., vW.y + (fine - .5) * 46. + big * 18.) * smoothstep(.46, .26, slope + (grit - .5) * .22 + (fine - .5) * .25);
-        snow = max(snow, snowy * smoothstep(.42, .2, slope + (grit - .5) * .25) * smoothstep(.8, 3.2, vW.y));
+        snow = max(snow, snowy * smoothstep(.80, .50, slope + (grit - .5) * .25) * smoothstep(.8, 3.2, vW.y));
         alb = mix(alb, mix(vec3(.46,.51,.60), vec3(.62,.67,.75), max(snowy, hiA)) * (.93 + .12 * grit), snow); N = normalize(mix(N, G, snow * .75));
         if (pinkK > .01) { vec2 pq = vW.xz * 5.5; vec2 pc = floor(pq); float ph = hash2(pc); vec2 pf = fract(pq) - .5 - (vec2(hash2(pc + 3.), hash2(pc + 7.)) - .5) * .5; float ca = cos(ph * 40.), sa = sin(ph * 40.); pf = mat2(ca, -sa, sa, ca) * pf; float pet = step(.28 + .4 * fine, ph) * smoothstep(.26, .20, length(pf * vec2(1., 1.7))); alb = mix(alb, mix(vec3(.82,.28,.45), vec3(.97,.70,.79), hash2(pc + 11.)), pet * pinkK * smoothstep(26., 10., dist) * smoothstep(.6,.2,slope)); alb = mix(alb, vec3(.74,.36,.46), pinkK * smoothstep(8., 30., dist) * smoothstep(.42, .66, big * .5 + fine * .35 + grit * .25) * .34 * smoothstep(.5,.2,slope)); }
         float shore = smoothstep(2.3, .4, vW.y + (grit - .5) * 1.6 + (fine - .5) * 2.); 
@@ -243,7 +255,7 @@ export function groundMaterial(u, { rock = false, far = false } = {}) {
         #ifdef ISLE
           col += alb * (vec3(.04,.22,.15) * uAurora * (.35 + .65 * max(N.y, 0.)) + uSky * .22 * (.2 + .8 * max(dot(N, normalize(vec3(-.5,.45,.75))), 0.))); col += uSky * .10 * pow(1. - max(dot(N, V), 0.), 3.);
         #endif
-        gl_FragColor = vec4(fogged(col, vW), 1.);
+        if (uCut > .5) { float din = smoothstep(-1284., -1300., vW.z); col = mix(col, alb * uDay * vec3(.42,.62,.80) * exp(-max(-1294. - vW.z, 0.) * .04) * ao * .8, din); } gl_FragColor = vec4(fogged(col, vW), 1.);
       }`,
   });
 }
@@ -265,7 +277,9 @@ function cliffPatch(mat, low) {
 export function createTerrain(u, low) {
   const step = low ? 6 : 4.2, cols = low ? 152 : 200, chunks = 32;
   const rowsTotal = Math.ceil((Z0 - Z1) / step / chunks / 4) * 4 * chunks, dz = (Z0 - Z1) / rowsTotal, per = rowsTotal / chunks;
-  const group = new THREE.Group(), mat = groundMaterial(u);
+  const group = new THREE.Group(), mat = groundMaterial(u), open = groundMaterial(u, { clip: false });
+  // Only the chunks that straddle a cut line carry the cutting shader. A shader that can discard stops the GPU from
+  // skipping hidden pixels, and the ground covers most of the screen, so everywhere else it is drawn without one.
   const W = cols + 1, H = rowsTotal + 1, P = new Float32Array(W * H * 3), tex = new Uint16Array(W * H);
   for (let j = 0; j < H; j++) { const z = Z0 - j * dz, c = center(z);
     for (let i = 0; i < W; i++) { const s = (i / cols) * 2 - 1, a = Math.abs(s), x = c + Math.sign(s) * (a * 90 + a * a * 560);
@@ -293,10 +307,11 @@ export function createTerrain(u, low) {
       if (j === 0 || j + st === per) { const e = j === 0 ? 0 : st, f = j === 0 ? st : 0; for (let q = 0; q < st; q++) j === 0 ? out.push(v(q, e), v(q + 1, e), v(q < st / 2 ? 0 : st, f)) : out.push(v(q + 1, e), v(q, e), v(q < st / 2 ? 0 : st, f)); j === 0 ? out.push(v(st / 2, e), v(st, f), v(0, f)) : out.push(v(st / 2, e), v(0, f), v(st, f)); }
       else out.push(v(0, 0), v(st, 0), v(0, st), v(st, 0), v(st, st), v(0, st)); } }
     const lods = lod.map((x) => new THREE.BufferAttribute(W * (per + 1) > 65535 ? new Uint32Array(x) : new Uint16Array(x), 1));
-    { const m = new THREE.Mesh(geo, mat); m.renderOrder = 5; m.userData.lod = { lods, z0: Z0 - c * per * dz, z1: Z0 - (c + 1) * per * dz }; group.add(m); } // after everything that stands on it
+    { const m = new THREE.Mesh(geo, open); m.renderOrder = 5; m.userData.lod = { lods, z0: Z0 - c * per * dz, z1: Z0 - (c + 1) * per * dz }; group.add(m); } // after everything that stands on it
   }
-  { const m = cliffPatch(mat, low); m.renderOrder = 4; group.add(m); }
-  group.userData.lod = (z) => { for (const m of group.children) { const l = m.userData.lod; if (!l) continue; const d = z > l.z0 ? z - l.z0 : z < l.z1 ? l.z1 - z : 0; const ix = l.lods[d < 190 ? 0 : d < 480 ? 1 : 2]; if (m.geometry.index !== ix) m.geometry.setIndex(ix); } };
+  { const m = cliffPatch(open, low); m.renderOrder = 4; group.add(m); }
+  group.userData.lod = (z) => { for (const m of group.children) { const l = m.userData.lod; if (!l) continue; const d = z > l.z0 ? z - l.z0 : z < l.z1 ? l.z1 - z : 0; const ix = l.lods[d < 190 ? 0 : d < 480 ? 1 : 2]; if (m.geometry.index !== ix) m.geometry.setIndex(ix);
+    const frost = u.uFrost.value > 0.5, cut = u.uCut.value > 0.5, edge = Math.max(frost ? -1336 : -1e9, cut ? -1318 : -1e9); m.visible = !(frost && l.z0 < -1336); m.material = group.userData.allClip || l.z1 < edge ? mat : open; } };
   return group;
 }
 
@@ -310,7 +325,7 @@ export function createWater(u) {
     fragmentShader: GLSL + SHADOW + HMAP + /* glsl */ `uniform sampler2D tBasalt; varying vec3 vW;
       uniform sampler2D tNoise; float tn(vec2 p){ return texture2D(tNoise, p * .125).r; }
       float wv(vec2 p){ return .75 * tn(p * .34 + vec2(uTime*.16, uTime*.55)) + .40 * tn(mat2(.8,.6,-.6,.8) * p * .95 + vec2(-uTime*.35, uTime*.75)) + .16 * tn(mat2(.6,-.8,.8,.6) * p * 2.6 + vec2(uTime*.5, uTime*1.1)); }
-      void main(){ ${BIOME}
+      void main(){ if (cut(vW, -1311.)) discard; ${BIOME}
         float depth = -hAt(vW.xz) + (n2(vW.xz * .7) - .5) * .5; if (depth < -.3) discard;
         vec3 V = normalize(cameraPosition - vW); float dist = length(cameraPosition - vW);
         vec2 e = vec2(.35, 0.); float h = wv(vW.xz);
@@ -345,7 +360,7 @@ export function createWater(u) {
           vec3 hotc = mix(vec3(.35,.012,.0), vec3(2.0,.30,.02), smoothstep(.1,.55,heat)); hotc = mix(hotc, vec3(2.9,.95,.14), smoothstep(.65,1.3,heat));
           col = mix(col, cru * (1. - smoothstep(.05,.5,heat)) + hotc * smoothstep(.03,.35,heat), volc); }
         float a = max(smoothstep(-.04, .32, depth) * mix(.72, 1., smoothstep(.3, 2., depth)), volc * smoothstep(-.1,.1,depth));
-        gl_FragColor = vec4(fogged(col, vW), max(a, foam * .5)); }`,
+        if (uCut > .5) { float din = smoothstep(-1270., -1306., vW.z); col = mix(col, vec3(.02,.16,.22) * uDay * .45 * (.6 + .8 * h) + refl * fr * vec3(.35,.6,.8) * .8, din); } gl_FragColor = vec4(fogged(col, vW), max(a, foam * .5)); }`,
   })); m.renderOrder = 1; return m;
 }
 

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLSL, SHADOW, rng, lerp, smooth, noise } from './common';
+import { GLSL, SHADOW, rng, lerp, smooth, noise, FastLoader } from './common';
 import { FALL, FALLS, alcove } from './landscape';
 import { loadMeshes } from './flora';
 
@@ -27,7 +27,7 @@ const S0 = -150, DS = 0.5, NS = 600, Y0 = -4, DY = 0.5, NY = 300;
 
 export function createGorge(u, low, onWater, onLoad) {
   const group = new THREE.Group(), gs = { uGorgeS: { value: null }, uGorgeM: { value: new THREE.Matrix4() } }; let dead = false, meshes = [], drawn = V(), textures = [];
-  const mats = [1, 2, 3].map((k) => { const uni = { ...u, ...gs, tC: { value: null }, tCN: { value: null } }; const ld = new THREE.TextureLoader(); ld.load(`/textures/crag${k}.webp`, (t) => { if (dead) return t.dispose(); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 2; uni.tC.value = t; textures.push(t); onLoad(); }); ld.load(`/textures/crag${k}_n.webp`, (t) => { if (dead) return t.dispose(); t.flipY = false; t.anisotropy = 2; uni.tCN.value = t; textures.push(t); onLoad(); });
+  const mats = [1, 2, 3].map((k) => { const uni = { ...u, ...gs, tC: { value: null }, tCN: { value: null } }; const ld = new FastLoader(() => false); ld.load(`/textures/crag${k}.webp`, (t) => { if (dead) return t.dispose(); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 2; uni.tC.value = t; textures.push(t); onLoad(); }); ld.load(`/textures/crag${k}_n.webp`, (t) => { if (dead) return t.dispose(); t.flipY = false; t.anisotropy = 2; uni.tCN.value = t; textures.push(t); onLoad(); });
     return new THREE.ShaderMaterial({ uniforms: uni, side: THREE.DoubleSide, vertexShader: `precision highp float; attribute float aWet; varying vec3 vW, vN; varying vec2 vU; varying float vWet; void main(){ vW = position; vN = normal; vU = uv; vWet = aWet; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.); }`,
       fragmentShader: GLSL + SHADOW + /* glsl */ `uniform sampler2D tC, tCN, tRock, tNoise, tGrass, tLeafy, uGorgeS; uniform mat4 uGorgeM; varying vec3 vW, vN; varying vec2 vU; varying float vWet;
         float tn(vec2 p){ return texture2D(tNoise, p * .125).r; }

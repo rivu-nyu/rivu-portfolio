@@ -17,9 +17,15 @@ export const STOPS = [
     sun: [38, 30], sunCol: '#ffd9ab', sunI: 4.2, zenith: '#3f72b0', horizon: '#e9d2b8', sky: '#aab6cf', ground: '#7d6450', fog: '#c3b7ae', den: 0.0007, night: 0, cloud: 0.35, photo: ['work', 0.6123, 14.5, [1.15, 1.1, 1.0]], range: [185, 0.62, 1] },
   { id: 'research', z: -900, place: 'Mirror Lake', az: 18, dist: 18, up: 2.6, sx: -0.23, sy: 0, alt: 13, hover: 0,
     sun: [-14, 8], sunCol: '#ffa066', sunI: 3.6, zenith: '#3a4d8c', horizon: '#f0a07c', sky: '#8d90bd', ground: '#4d4350', fog: '#b08c98', den: 0.0012, night: 0, cloud: 0.5, photo: ['research', 0.6411, 4.1, [0.85, 0.56, 0.46]], range: [160, 0.75, 0] },
-  { id: 'skills', z: -1200, place: 'Snow Ridge', az: -58, dist: 18, up: 3, sx: -0.24, sy: 0, alt: 16, hover: 0,
-    sun: [58, 26], sunCol: '#ffd2a0', sunI: 2.1, zenith: '#2f66ad', horizon: '#d9c3b8', sky: '#6f95d0', ground: '#5d6c94', fog: '#b9c6dc', den: 0.0011, night: 0, cloud: 0.4, photo: ['skills', 0.6373, 12.9, [1, 1, 1]], range: [340, 0.8, 0] },
-  { id: 'interests', z: -1350, place: 'Sky Islands', tag: 'isles', az: -34, dist: 31, up: 1.5, sx: 0.23, sy: 0.23, alt: 440, hover: 0, hold: true,
+  { id: 'skills', z: -1085, place: 'Snow Ridge', az: 21, dist: 21, up: 3, sx: -0.24, sy: 0.26, alt: 13, hover: 0,
+    sun: [78, 23], sunCol: '#ffe2bd', sunI: 1.9, zenith: '#2f66ad', horizon: '#d9c3b8', sky: '#6f95d0', ground: '#5d6c94', fog: '#b4c6e0', den: 0.00062, night: 0, cloud: 0.4, photo: ['skills', 0.6373, 12.9, [1, 1, 1]], range: [340, 0.8, 0] },
+  { id: 'cove', z: -1454, space: 'sea', place: 'Glowing Cove', az: 11, dist: 19, up: 1.3, sx: -0.05, sy: 0.03, alt: 8.4, hover: 0,
+    sun: [2, 0.6], sunCol: '#ff7a48', sunI: 0.14, zenith: '#0b1430', horizon: '#4a4a78', sky: '#101c38', ground: '#03070d', fog: '#02050c', den: 0.0009, night: 0.75, cloud: 0.02, photo: ['research', 0.6411, 4.1, [0.16, 0.13, 0.2]] },
+  { id: 'ocean', z: -1814, space: 'sea', place: 'Evening Sea', az: 24, dist: 20, up: 2.4, sx: 0.05, sy: 0.0, alt: 9, hover: 0,
+    sun: [-24, 2.2], sunCol: '#ff8a4a', sunI: 1.7, zenith: '#131a3c', horizon: '#8a4038', sky: '#37406a', ground: '#10161f', fog: '#3c3044', den: 0.00055, night: 0.55, cloud: 0.3, photo: ['research', 0.6411, 4.1, [0.30, 0.20, 0.23]] },
+  { id: 'reef', z: -2054, space: 'sea', place: 'Whale Song', az: 10, dist: 21, up: 1.6, sx: -0.24, sy: 0.15, alt: -11.5, hover: 0,
+    sun: [70, 34], sunCol: '#c4d6ff', sunI: 1.1, zenith: '#02040c', horizon: '#0c1a36', sky: '#4a6aa8', ground: '#0c1626', fog: '#0c1730', den: 0.0004, night: 1, cloud: 0.02, aurora: 1 },
+  { id: 'interests', z: -1350, place: 'Sky Islands', tag: 'isles', az: -34, dist: 31, up: 1.5, sx: 0.23, sy: 0.23, alt: 440, hover: 0, hold: true, orbit: true,
     sun: [82, 30], sunCol: '#c4d6ff', sunI: 2.5, zenith: '#02040c', horizon: '#0d1c3a', sky: '#5f82c4', ground: '#46598a', fog: '#14264a', den: 0.0015, night: 1, cloud: 0.02, aurora: 1 },
   { id: 'lab', z: -1500, place: 'Ember Caldera', az: -125, dist: 17, up: 1, sx: 0.23, sy: 0, alt: 17, hover: 0,
     sun: [30, 12], sunCol: '#ff9c70', sunI: 2.3, zenith: '#131327', horizon: '#9c4a34', sky: '#6f6680', ground: '#5a443f', fog: '#4a3540', den: 0.0012, night: 0.7, cloud: 0.75, photo: ['lab', 0.5796, 3.6, [0.72, 0.34, 0.28]], range: [60, 0.6, 0] },
@@ -30,6 +36,11 @@ export const STOPS = [
 ];
 
 // z along the flight for a fractional stop index, and back again
-export const zOf = (p) => { const i = Math.max(0, Math.min(STOPS.length - 2, Math.floor(p))); return STOPS[i].z + (STOPS[i + 1].z - STOPS[i].z) * (p - i); };
-export const pOf = (z) => { for (let i = 0; i < STOPS.length - 1; i++) if (z > STOPS[i + 1].z) return Math.max(0, i + (STOPS[i].z - z) / (STOPS[i].z - STOPS[i + 1].z)); return STOPS.length - 1; };
 export const at = (id) => STOPS.findIndex((s) => s.id === id);
+// some worlds lie elsewhere: between them the flight passes through darkness or cloud, and half-way it is simply there
+const other = (i) => STOPS[i + 1] && STOPS[i].id !== 'skills' && (STOPS[i].space || '') !== (STOPS[i + 1].space || '');
+export const crossing = (p) => { const i = Math.max(0, Math.min(STOPS.length - 2, Math.floor(p))); return other(i) ? { i, f: p - i } : null; };
+export const inSea = (p) => { const i = Math.max(0, Math.min(STOPS.length - 2, Math.floor(p))), f = p - i; return other(i) ? (f < 0.5 ? STOPS[i] : STOPS[i + 1]).space === 'sea' : STOPS[i].space === 'sea'; };
+// z along the flight for a fractional stop index, and back again
+export const zOf = (p) => { const i = Math.max(0, Math.min(STOPS.length - 2, Math.floor(p))), f = p - i, a = STOPS[i], b = STOPS[i + 1]; const g = f; return other(i) ? (f < 0.5 ? a.z - f * 180 : b.z + (1 - f) * 180) : a.z + (b.z - a.z) * g; };
+export const pOf = (z) => { const L = STOPS.filter((s) => !s.space); for (let i = 0; i < L.length - 1; i++) if (z > L[i + 1].z) return Math.max(0, at(L[i].id) + (L[i].z - z) / (L[i].z - L[i + 1].z)); return STOPS.length - 1; };

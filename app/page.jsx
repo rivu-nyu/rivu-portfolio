@@ -109,6 +109,16 @@ export default function Home() {
           </div>
         </section>
 
+        <section id="cove" className="stop passage" aria-label="Glowing Cove" />
+
+        <section id="ocean" className="stop passage" aria-label="Evening Sea" />
+
+        <div className="breach" aria-hidden="true" />
+
+        <section id="reef" className="stop passage" aria-label="Whale Song" />
+
+        <div className="climb" aria-hidden="true" />
+
         <section id="interests" className="stop left">
           <div className="panel">
             <h2>What draws me in</h2>

@@ -3,3 +3,5 @@ Surface textures, trees, plants and rocks from Poly Haven (polyhaven.com), CC0 /
 Skies (public/skies, except peaks/mesas) and aerial, pebbles, meadow textures: Poly Haven, CC0.
 Distant ranges (public/skies/peaks*, mesas*) and mountain relief (public/land): derived from Terrain Tiles on AWS (USGS 3DEP, SRTM and other sources; courtesy of Mapzen and contributors).
 Music: composed and synthesised in code for this site.
+Cave and limestone surfaces (karst*, lime*, crack_n): Poly Haven, CC0 (including rock_boulder_dry and rock_08).
+Cave, snow mountain, orca models: built procedurally for this site (public/models). Orca shapes were modelled from public-domain NOAA reference photographs; no image is used as a texture.

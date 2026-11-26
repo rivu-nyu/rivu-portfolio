@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLSL, rng } from './common';
+import { GLSL, rng, FastLoader } from './common';
 import { STOP_GAP } from './stops';
 import { center, CONE, height } from './landscape';
 
@@ -7,7 +7,7 @@ import { center, CONE, height } from './landscape';
 // stored as normals, distance, snow, rock and horizon angles so every world's own sun lights and shades them.
 const blank = new THREE.DataTexture(new Uint8Array([128, 128, 0, 0]), 1, 1); blank.needsUpdate = true;
 export const ranges = { uniforms: { tP1: { value: blank }, tP2: { value: blank }, tP3: { value: blank }, tM1: { value: blank }, tM2: { value: blank }, tM3: { value: blank }, uRgA: { value: new THREE.Vector4() }, uRgB: { value: new THREE.Vector4() } },
-  load(low, kick) { const L = new THREE.TextureLoader(), all = []; let dead = false;
+  load(low, kick) { const L = new FastLoader(), all = []; let dead = false;
     for (const [k, n] of [['tP', 'peaks'], ['tM', 'mesas']]) for (const q of [1, 2, 3]) L.load(`/skies/${n}${low && q < 3 ? '-s' : ''}_t${q}.webp`, (t) => { if (dead) return t.dispose(); t.wrapS = THREE.RepeatWrapping; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; ranges.uniforms[k + q].value = t; all.push(t); kick(); });
     return () => { dead = true; all.forEach((t) => t.dispose()); for (const x of ['tP', 'tM']) for (const q of [1, 2, 3]) ranges.uniforms[x + q].value = blank; }; } };
 const RANGE = /* glsl */ `
@@ -46,16 +46,16 @@ export function createSky(u) {
       void main(){ vec3 d = normalize(vD); vec3 c = skyAt(d); float ph = mix(uPhA.z, uPhB.z, uPhMix); float s = max(dot(d, uSunDir), 0.);
         c += (1. - uHigh) * uSunCol * mix(5., 2.2, uNight) * smoothstep(.99935, .9997, s);
         if (d.y > mix(0., -.05, uHigh)) {
-          if (uNight + uHigh > .01) {
+          { float hiS = max(uHigh, uAurora); if (uNight + hiS > .01) {
           // stars in three sizes with their own colour and twinkle, thicker along the Milky Way
           vec3 mw = normalize(vec3(.52, .62, -.59)); float band0 = dot(d, mw); float milky = exp(-band0 * band0 * 26.); float dust = fbm3(d * 5.5 + 3.), dust2 = fbm3(d * 14.);
           float mk = milky * smoothstep(.30, .72, dust * .7 + dust2 * .35); float lane = smoothstep(.50, .62, fbm3(d * 8. + 11.)) * exp(-band0 * band0 * 160.);
-          for (int k = 0; k < 3; k++){ float sc = k == 0 ? 120. : k == 1 ? 230. : 390.; vec3 q = d * sc, g = floor(q), f = fract(q) - .5; float r = hash3(g + float(k) * 19.); float th = (k == 0 ? .9945 : k == 1 ? .988 : .976) - (k == 0 ? .016 : k == 1 ? .055 : .10) * uHigh - mk * .035 * uHigh;
+          for (int k = 0; k < 3; k++){ float sc = k == 0 ? 120. : k == 1 ? 230. : 390.; vec3 q = d * sc, g = floor(q), f = fract(q) - .5; float r = hash3(g + float(k) * 19.); float th = (k == 0 ? .9945 : k == 1 ? .988 : .976) - (k == 0 ? .016 : k == 1 ? .055 : .10) * hiS - mk * .035 * hiS;
             float on = step(th, r); vec3 off = (vec3(hash3(g + 5.), hash3(g + 9.), hash3(g + 13.)) - .5) * .5; float rad = length(f - off); float tw = .72 + .28 * sin(uTime * (1.5 + r * 60. * .1) + r * 900.); vec3 tint = mix(vec3(1.,.82,.62), vec3(.68,.80,1.), hash3(g + 23.));
-            float core = smoothstep(.20, .0, rad) + (k == 0 ? .35 * exp(-rad * 15.) * smoothstep(.25, .08, rad) : 0.); c += uNight * on * core * tw * tint * (k == 0 ? 1.5 : k == 1 ? 1.1 : .75) * (1. + .9 * uHigh) * smoothstep(mix(.0, -.04, uHigh), mix(.16, .02, uHigh), d.y) * (1. - lane * .7); }
-          c += uNight * uHigh * (mk * mix(vec3(.16,.19,.30), vec3(.36,.28,.31), dust2) * 1.05 * (1. - lane * .8)) * smoothstep(.0, .2, d.y);
-          { float tt = uTime * .13, id = floor(tt), fr = fract(tt) * 7.; if (fr < 1. && uHigh > .5) { vec3 a0 = normalize(vec3(sin(id * 4.1), .35 + .3 * hash2(vec2(id, 2.)), cos(id * 2.7))), dv = normalize(vec3(cos(id * 3.3), -.45, sin(id * 1.9))); vec3 hd = normalize(a0 + dv * fr * .5); vec3 rel = d - hd; float al = dot(rel, -dv), pr = length(rel + dv * al); c += vec3(1.6,1.8,2.2) * smoothstep(.0025, .0, pr) * smoothstep(.16, .0, al) * step(0., al) * (1. - fr); } }
-          }
+            float core = smoothstep(.20, .0, rad) + (k == 0 ? .35 * exp(-rad * 15.) * smoothstep(.25, .08, rad) : 0.); c += uNight * on * core * tw * tint * (k == 0 ? 1.5 : k == 1 ? 1.1 : .75) * (1. + .9 * hiS) * smoothstep(mix(.0, -.04, hiS), mix(.16, .02, hiS), d.y) * (1. - lane * .7); }
+          c += uNight * hiS * (mk * mix(vec3(.16,.19,.30), vec3(.36,.28,.31), dust2) * 1.05 * (1. - lane * .8)) * smoothstep(.0, .2, d.y);
+          { float tt = uTime * .13, id = floor(tt), fr = fract(tt) * 7.; if (fr < 1. && hiS > .5) { vec3 a0 = normalize(vec3(sin(id * 4.1), .35 + .3 * hash2(vec2(id, 2.)), cos(id * 2.7))), dv = normalize(vec3(cos(id * 3.3), -.45, sin(id * 1.9))); vec3 hd = normalize(a0 + dv * fr * .5); vec3 rel = d - hd; float al = dot(rel, -dv), pr = length(rel + dv * al); c += vec3(1.6,1.8,2.2) * smoothstep(.0025, .0, pr) * smoothstep(.16, .0, al) * step(0., al) * (1. - fr); } }
+          } }
           if (uHigh < .99 && ph < .99) {
           vec2 p = d.xz / (max(d.y, 0.) + .16); vec2 sd = normalize(uSunDir.xz + 1e-4);
           float cl = cloud(p), lit = cloud(p + sd * .10), lit2 = cloud(p + sd * .24);

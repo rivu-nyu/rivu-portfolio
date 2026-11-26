@@ -13,11 +13,11 @@ const ACTS = { wings: 6, fire: 4.6, both: 6.5, eat: 6.4 };
 export function createBehaviour(perches) {
   const pos = new THREE.Vector3(), prev = new THREE.Vector3(), p0 = new THREE.Vector3(), m0 = new THREE.Vector3(), m1 = new THREE.Vector3(), F = new THREE.Vector3(), vel = new THREE.Vector3(), perchAt = new THREE.Vector3();
   const out = { pos, yaw: 0, pitch: 0, bank: 0, stand: 0, fold: 0, lift: 0, amp: 0.7, flap: 3.6, neck: 0, neckYaw: 0, tail: 0, fire: 0, eat: 0, peck: 0, crouch: 0, state: 'fly', act: null, perch: null, base: new THREE.Vector3(), offset: new THREE.Vector3(), speed: 0, rest: 0 };
-  let cine = null, seen = false, dir = 1, k = 0, S = 0, tau = 0, t = 0, T = 1, idle = 0, actT = 0, wait = 0, last = null, perchYaw = 0, started = false, bankRate = 0, glide = 0;
+  let cine = null, seen = false, dir = 1, k = 0, S = 0, tau = 0, t = 0, T = 1, idle = 0, actT = 0, wait = 0, last = null, perchYaw = 0, started = false, orbitYaw = 0, orbitK = 0, yawT0 = 0, bankRate = 0, glide = 0, lastZ = 600, lastX = 0, lastY = 0;
 
   // how fast the path may move: the bird finishes turning before it flies the other way
 let travel = 0;
-  out.align = () => (out.state === 'perch' || out.state === 'cine' ? 0.02 : Math.max(0.02, Math.min(1, Math.cos(out.yaw - travel) * 1.5 - 0.35)));
+  out.align = () => (out.free ? 1 : out.state === 'perch' || out.state === 'cine' ? 0.02 : Math.max(0.02, Math.min(1, Math.cos(out.yaw - travel) * 1.5 - 0.35)));
 
   function pickAct() { const names = Object.keys(ACTS).filter((n) => n !== last); last = out.act = names[Math.floor(Math.random() * names.length)]; actT = 0; }
 
@@ -32,7 +32,7 @@ let travel = 0;
 
   out.play = (n) => { out.act = last = n; actT = 0; };
 
-  out.step = (dt, time, { P, targetP, alt, hover, scrolling, camYaw, faceSign }) => {
+  out.step = (dt, time, { P, targetP, alt, hover, scrolling, camYaw, faceSign, path, orbit }) => {
     const delta = targetP - P, z = zOf(P), S0 = out.state, tag0 = STOPS[Math.round(P)]?.tag;
     if (Math.abs(delta) > 0.006) dir = Math.sign(delta); 
     idle = scrolling || Math.abs(delta) > 0.004 ? 0 : idle + dt;
@@ -41,22 +41,24 @@ let travel = 0;
 
     // half-turn when travel direction flips; instant while standing, the take-off covers it
     const wantK = dir > 0 ? 0 : 1; k = S0 === 'perch' ? wantK : k + Math.max(-dt * 1.35, Math.min(dt * 1.35, wantK - k));
-    const ke = smooth(0, 1, k), arc = 4 * k * (1 - k), h0 = heading(z), right = -Math.cos(h0), fwd = Math.sin(h0);
+    const ke = smooth(0, 1, k), arc = 4 * k * (1 - k), h0 = path ? path.yaw : heading(z), right = -Math.cos(h0), fwd = Math.sin(h0);
 
     S = damp(S, soaring ? 1 : 0, soaring ? 0.7 : 1.3, dt); if (S < 0.01) tau = 0; else tau += dt * 0.42;
-    out.base.set(center(z), alt, z);
+    out.base.set(path ? path.x : center(z), alt, path ? path.z : z);
     F.copy(out.base); F.x += right * arc * 5; F.z += -fwd * 0 ; F.y += noise(time * 0.15, 5) * 0.7 + Math.sin(time * 0.8) * 0.3 + arc * 0.8 + S * Math.sin(tau * 2) * 1.1;
     F.x += noise(time * 0.12, 3) * 1.2 * (1 - S) - S * 5 * (1 - Math.cos(tau)); F.z += -S * 8 * Math.sin(tau);
     const yaw0 = h0 + Math.PI * ke, a = Math.sin(yaw0) * (1 - S) - S * 5 * Math.sin(tau), b = Math.cos(yaw0) * (1 - S) - S * 8 * Math.cos(tau);
+    if (orbit) { F.set(orbit.p[0], orbit.p[1] + noise(time * 0.15, 5) * 0.7, orbit.p[2]); out.base.set(orbit.p[0], orbit.p[1], orbit.p[2]); out.free = true; orbitYaw = orbit.yaw + (dir < 0 ? Math.PI : 0); orbitK = orbit.k; } else { orbitK = 0; out.free = false; }
     travel = h0 + (dir > 0 ? 0 : Math.PI);
-    let yawT = Math.atan2(a, b), turnK = 9;
+    let yawT = Math.atan2(a, b), turnK = 9; if (orbitK > 0.02) { yawT = yawT + wrap(orbitYaw - yawT) * smooth(0.02, 0.9, orbitK); turnK = 3.2; }
 
     if (!started) { pos.copy(F); out.yaw = yawT; started = true; }
+    if (Math.abs(out.base.z - lastZ) > 400) { const d = out.base.z - lastZ; p0.z += d; p0.x += out.base.x - lastX; p0.y += out.base.y - lastY; pos.set(F.x, F.y, F.z); } lastZ = out.base.z; lastX = out.base.x; lastY = out.base.y;
     prev.copy(pos); t += dt; out.cineT = S0 === 'cine' ? t : 0;
 
     if (S0 === 'fly') {
       pos.copy(F);
-      if (landable && !out.hold && idle > 0.75 && arc < 0.02 && hover < 0.05) {
+      if (landable && !out.hold && orbitK < 0.01 && idle > 0.75 && arc < 0.02 && hover < 0.05) {
         let best = null, bd = 34; const tag = STOPS[Math.round(P)]?.tag; for (const p of perches) { if ((p.tag || undefined) !== tag || (tag && Math.abs(P - Math.round(P)) > 0.2)) continue; const d = Math.abs(p.z - (z - dir * (STOPS[Math.round(P)]?.hold ? 1 : 9))); if (d < bd) { bd = d; best = p; } }
         if (best && best.cine && !seen) { startCine(best, camYaw, faceSign); } else if (best) { out.perch = best; perchAt.set(best.x, best.y + 1.36, best.z); p0.copy(pos); const dist = p0.distanceTo(perchAt); T = Math.min(4, Math.max(2.3, dist / 9));
           m0.set(Math.sin(out.yaw), 0, Math.cos(out.yaw)).multiplyScalar(dist * 1.1); m1.copy(perchAt).sub(p0).setY(0).multiplyScalar(0.5); m1.y = -1.5; perchYaw = camYaw + faceSign * (best.face ?? 0.85); out.state = 'land'; t = 0; }
